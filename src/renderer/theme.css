@@ -1,9 +1,9 @@
 :root {
-  --bg: #111111;
-  --panel: #1a1a1a;
-  --fg: #d0d0d0;
-  --accent: #c41e3a;
-  --dim: rgba(10, 10, 10, 0.5);
+  --bg: #16182e;
+  --panel: #1e2140;
+  --fg: #c8cce0;
+  --accent: #ff2d78;
+  --dim: rgba(12, 14, 32, 0.55);
   font-family: 'Segoe UI', sans-serif;
 }
 
@@ -16,7 +16,7 @@ html,
 body {
   margin: 0;
   overflow: hidden;
-  background: #111;
+  background: #16182e;
   color: var(--fg);
   width: 100%;
   height: 100%;

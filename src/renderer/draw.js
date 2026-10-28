@@ -10,7 +10,7 @@ export const TOOLS = [
   ['eraser', 'Ластик', 'Лс']
 ]
 
-export const COLORS = ['#c41e3a', '#d0d0d0', '#111111', '#f0c040', '#3d8bff', '#3cb371', '#ff7a1a', '#9b59b6']
+export const COLORS = ['#ff2d78', '#d0d0d0', '#111111', '#f0c040', '#3d8bff', '#3cb371', '#ff7a1a', '#9b59b6']
 export const WIDTHS = [2, 4, 8, 14]
 
 export function normRect(a, b) {

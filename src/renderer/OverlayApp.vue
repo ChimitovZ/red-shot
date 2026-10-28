@@ -681,15 +681,15 @@ const dimRects = () => {
   display: flex;
   align-items: center;
   gap: 4px;
-  background: #1a1a1a;
+  background: var(--panel);
   padding: 3px 4px;
 }
 .tfs {
   width: 38px;
   height: 20px;
   border: 0;
-  background: #111;
-  color: #d0d0d0;
+  background: var(--bg);
+  color: var(--fg);
   font-size: 12px;
   text-align: center;
   outline: none;
@@ -704,12 +704,12 @@ const dimRects = () => {
   padding: 2px;
   border: 0;
   background: none;
-  color: #d0d0d0;
+  color: var(--fg);
   cursor: pointer;
 }
 .tb.on,
 .tb:hover {
-  color: #c41e3a;
+  color: var(--accent);
 }
 .tfill {
   width: 11px;
@@ -726,8 +726,8 @@ const dimRects = () => {
   display: flex;
   align-items: center;
   gap: 6px;
-  background: #1a1a1a;
-  color: #d0d0d0;
+  background: var(--panel);
+  color: var(--fg);
   font-size: 12px;
   padding: 4px 8px;
   pointer-events: none;
@@ -737,11 +737,11 @@ const dimRects = () => {
   padding: 0;
   border: 0;
   background: none;
-  color: #d0d0d0;
+  color: var(--fg);
   cursor: pointer;
   pointer-events: auto;
 }
 .hb:hover {
-  color: #c41e3a;
+  color: var(--accent);
 }
 </style>

@@ -74,8 +74,8 @@ async function save() {
 <style scoped>
 .wrap {
   padding: 12px 14px;
-  background: #111;
-  color: #d0d0d0;
+  background: var(--bg);
+  color: var(--fg);
   font: 12px/1.3 'Segoe UI', sans-serif;
   outline: none;
 }
@@ -83,17 +83,17 @@ h1 {
   margin: 0 0 10px;
   font-size: 14px;
   font-weight: 600;
-  color: #c41e3a;
+  color: var(--accent);
 }
 label {
   display: block;
   margin: 8px 0 3px;
-  color: #d0d0d0;
+  color: var(--fg);
 }
 button {
-  background: #1a1a1a;
-  color: #d0d0d0;
-  border: 1px solid #1a1a1a;
+  background: var(--panel);
+  color: var(--fg);
+  border: 1px solid var(--panel);
   padding: 4px 8px;
   font: inherit;
   cursor: pointer;
@@ -101,8 +101,8 @@ button {
   text-align: left;
 }
 button.rec {
-  border-color: #c41e3a;
-  color: #c41e3a;
+  border-color: var(--accent);
+  color: var(--accent);
 }
 .row {
   display: flex;
@@ -110,7 +110,7 @@ button.rec {
 }
 .path {
   flex: 1;
-  background: #1a1a1a;
+  background: var(--panel);
   padding: 4px 6px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -127,7 +127,7 @@ button.rec {
 }
 .ok {
   margin-top: 12px;
-  border-color: #c41e3a;
+  border-color: var(--accent);
   text-align: center;
 }
 </style>

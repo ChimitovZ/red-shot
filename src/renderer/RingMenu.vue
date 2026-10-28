@@ -131,12 +131,29 @@ defineExpose({ hitAt, R })
   >
     <svg class="svg" :width="R * 2" :height="R * 2">
       <defs>
-        <radialGradient id="rs-plate" cx="42%" cy="32%" r="78%">
-          <stop offset="0%" stop-color="#2a2a2a" />
-          <stop offset="100%" stop-color="#0c0c0c" />
+        <radialGradient id="rs-plate" cx="38%" cy="28%" r="78%">
+          <stop offset="0%" stop-color="#2c315c" />
+          <stop offset="55%" stop-color="#1c1f40" />
+          <stop offset="100%" stop-color="#12142c" />
         </radialGradient>
+        <radialGradient id="rs-hub" cx="50%" cy="42%" r="70%">
+          <stop offset="0%" stop-color="#262a52" />
+          <stop offset="100%" stop-color="#16182e" />
+        </radialGradient>
+        <linearGradient id="rs-hot" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#ff7ab0" />
+          <stop offset="100%" stop-color="#ff2d78" />
+        </linearGradient>
+        <filter id="rs-glow" x="-40%" y="-40%" width="180%" height="180%">
+          <feGaussianBlur in="SourceGraphic" stdDeviation="3.2" result="b" />
+          <feMerge>
+            <feMergeNode in="b" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
       </defs>
       <g :transform="`translate(${R},${R})`">
+        <circle :r="tOut + 3" class="halo" />
         <circle :r="tOut" class="plate" />
         <circle :r="tIn - 1" class="gap" />
         <circle :r="cIn - 1" class="gap" />
@@ -173,6 +190,7 @@ defineExpose({ hitAt, R })
         <line v-if="aim" class="aim" :x1="aim.x1" :y1="aim.y1" :x2="aim.x2" :y2="aim.y2" />
         <circle v-if="aim" class="aimdot" :cx="aim.x2" :cy="aim.y2" r="3.5" />
         <circle :r="wIn - 1" class="hub" />
+        <circle :r="wIn - 10" class="hub-ring" />
       </g>
     </svg>
     <div
@@ -213,33 +231,41 @@ defineExpose({ hitAt, R })
 }
 .svg {
   display: block;
-  filter: drop-shadow(0 18px 40px rgba(0, 0, 0, 0.55));
+  filter: drop-shadow(0 18px 44px rgba(8, 10, 28, 0.72)) drop-shadow(0 0 22px rgba(255, 45, 120, 0.18));
+}
+.halo {
+  fill: none;
+  stroke: rgba(255, 45, 120, 0.28);
+  stroke-width: 2;
+  filter: url(#rs-glow);
 }
 .plate {
   fill: url(#rs-plate);
-  stroke: #2e2e2e;
+  stroke: #3a4074;
   stroke-width: 1.25;
 }
 .gap {
   fill: none;
-  stroke: #0a0a0a;
+  stroke: #101228;
   stroke-width: 5;
 }
 .sec {
-  fill: #1c1c1c;
-  stroke: #0a0a0a;
+  fill: #1c2044;
+  stroke: #101228;
   stroke-width: 1.25;
   transition: fill 100ms ease;
 }
 .sec.cur {
-  fill: #241316;
-  stroke: #c41e3a;
+  fill: #3a1840;
+  stroke: url(#rs-hot);
   stroke-width: 1.75;
+  filter: url(#rs-glow);
 }
 .sec.on,
 .sec.flash {
-  fill: #c41e3a;
-  stroke: #e24b62;
+  fill: url(#rs-hot);
+  stroke: #ff8fbf;
+  filter: url(#rs-glow);
 }
 .swatch {
   stroke: rgba(255, 255, 255, 0.22);
@@ -250,35 +276,48 @@ defineExpose({ hitAt, R })
 }
 .swatch.cur,
 .swatch.on {
-  stroke: #c41e3a;
+  stroke: #ff2d78;
   stroke-width: 3;
+  filter: url(#rs-glow);
 }
 .wdot {
-  fill: #ececec;
+  fill: #ececf6;
   pointer-events: none;
 }
 .hub {
-  fill: #101010;
-  stroke: #2a2a2a;
+  fill: url(#rs-hub);
+  stroke: #3a4074;
   stroke-width: 1.25;
+}
+.hub-ring {
+  fill: none;
+  stroke: #ff2d78;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: 48 140;
+  stroke-dashoffset: 18;
+  opacity: 0.95;
+  filter: url(#rs-glow);
 }
 .aim {
-  stroke: #c41e3a;
+  stroke: #ff2d78;
   stroke-width: 1.5;
   stroke-linecap: round;
-  opacity: 0.9;
+  opacity: 0.95;
+  filter: url(#rs-glow);
 }
 .aimdot {
-  fill: #c41e3a;
-  stroke: #f2f2f2;
+  fill: #ff2d78;
+  stroke: #ffe6f1;
   stroke-width: 1.25;
+  filter: url(#rs-glow);
 }
 .ico {
   position: absolute;
   display: flex;
-  color: #c8c8c8;
+  color: #a8add0;
   transform: translate(-50%, -50%);
-  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.45));
+  filter: drop-shadow(0 1px 1px rgba(8, 10, 28, 0.5));
   transition:
     transform 100ms ease,
     color 100ms ease;
@@ -298,12 +337,12 @@ defineExpose({ hitAt, R })
   height: 88px;
   margin: auto;
   text-align: center;
-  color: #d8d8d8;
+  color: #c8cce0;
   font: 600 11px/1.2 'Segoe UI', sans-serif;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.04em;
   transition: color 100ms ease;
 }
 .cap.acc {
-  color: #e24b62;
+  color: #ff5a9a;
 }
 </style>
