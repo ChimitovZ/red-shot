@@ -38,6 +38,7 @@
       "**/node_modules/koffi/**"
     ],
     "win": {
+      "signAndEditExecutable": false,
       "target": [
         {
           "target": "portable",
