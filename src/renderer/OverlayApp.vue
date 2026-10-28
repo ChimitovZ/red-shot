@@ -18,6 +18,7 @@ const items = []
 const redo = []
 const preview = ref(null)
 const ring = reactive({ show: false, x: 0, y: 0, hx: 0, hy: 0, flash: '' })
+let ringLmb = false
 const texting = reactive({ on: false, edit: -1, x: 0, y: 0, val: '', fontSize: 18, bg: false, outline: false, b: null, drag: '' })
 const tOff = { x: 0, y: 0 }
 const vw = ref(1)
@@ -259,11 +260,11 @@ function openRing(x, y) {
   ring.hx = x
   ring.hy = y
   ring.show = true
+  ringLmb = false
 }
 
-function pickRing() {
+function applyRing() {
   const h = ringRef.value?.hitAt(ring.hx - ring.x, ring.hy - ring.y)
-  ring.show = false
   if (!h) return
   if (h.kind === 'tool') {
     tool.value = TOOLS[h.i][0]
@@ -276,6 +277,24 @@ function pickRing() {
   if (h.kind === 'width') width.value = WIDTHS[h.i]
 }
 
+function pickRing() {
+  applyRing()
+  ring.show = false
+  ringLmb = false
+}
+
+function tapRing(e) {
+  ring.hx = e.clientX
+  ring.hy = e.clientY
+  applyRing()
+}
+
+function onMouseDown(e) {
+  if (!ring.show || e.button !== 0) return
+  ringLmb = true
+  tapRing(e)
+}
+
 function onDown(e) {
   if (e.button === 2) {
     if (!sel.on) return
@@ -283,7 +302,14 @@ function onDown(e) {
     openRing(e.clientX, e.clientY)
     return
   }
-  if (e.button !== 0 || ring.show) return
+  if (ring.show) {
+    if (e.button === 0) {
+      ringLmb = true
+      tapRing(e)
+    }
+    return
+  }
+  if (e.button !== 0) return
   if (texting.on) {
     commitText()
     const n = hitText(e.clientX, e.clientY)
@@ -310,6 +336,9 @@ function onMove(e) {
   if (ring.show) {
     ring.hx = e.clientX
     ring.hy = e.clientY
+    const down = !!(e.buttons & 1)
+    if (down && !ringLmb) applyRing()
+    ringLmb = down
     return
   }
   if (drag.on) {
@@ -332,11 +361,12 @@ function onMove(e) {
 }
 
 function onUp(e) {
+  if (e.button === 0) ringLmb = false
   if (e.button === 2) {
     if (ring.show) pickRing()
     return
   }
-  if (e.button !== 0) return
+  if (e.button !== 0 || ring.show) return
   if (texting.drag) {
     if (texting.drag === 'handle' && texting.b) {
       const d = textHandle(tBox.value)
@@ -461,9 +491,13 @@ onMounted(() => {
   window.redshot.onStart(applyStart)
   window.redshot.uiReady()
   window.addEventListener('keydown', onKey)
+  window.addEventListener('mousedown', onMouseDown, true)
   window.addEventListener('contextmenu', (e) => e.preventDefault())
 })
-onUnmounted(() => window.removeEventListener('keydown', onKey))
+onUnmounted(() => {
+  window.removeEventListener('keydown', onKey)
+  window.removeEventListener('mousedown', onMouseDown, true)
+})
 
 const dimRects = () => {
   if (!sel.on && !drag.on) return [{ x: 0, y: 0, w: '100%', h: '100%' }]
