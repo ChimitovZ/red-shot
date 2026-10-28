@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import {
   ArrowUpRight,
   Circle,
@@ -57,6 +57,7 @@ const barH = 40
 const btnW = 124
 const btnGap = 0
 const last = ref(null)
+const warming = ref(false)
 
 watch(
   () => props.show,
@@ -64,6 +65,22 @@ watch(
     if (!v) last.value = null
   }
 )
+
+function warm(done) {
+  if (props.show) {
+    done?.()
+    return
+  }
+  warming.value = true
+  nextTick(() => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        warming.value = false
+        done?.()
+      })
+    })
+  })
+}
 
 const toolPolys = computed(() => sectorPolys(TOOLS.length, tIn, tOut, 0.028))
 const colorPolys = computed(() => sectorPolys(COLORS.length, cIn, cOut, 0.03))
@@ -150,13 +167,13 @@ const aim = computed(() => {
   return { x1: Math.cos(a) * wIn, y1: Math.sin(a) * wIn, x2: Math.cos(a) * r, y2: Math.sin(a) * r }
 })
 
-defineExpose({ hitAt, R })
+defineExpose({ hitAt, R, warm })
 </script>
 
 <template>
   <div
     class="wrap"
-    :class="{ vis: show }"
+    :class="{ vis: show, warm: warming }"
     :style="{ left: x - R + 'px', top: y - R + 'px', width: R * 2 + 'px', height: R * 2 + 'px' }"
   >
     <svg class="svg" :width="R * 2" :height="R * 2">
@@ -253,9 +270,10 @@ defineExpose({ hitAt, R })
   z-index: 20;
   pointer-events: none;
   opacity: 0;
-  transform: scale(0.9);
+  transform: translateZ(0) scale(0.9);
   transform-origin: 50% 50%;
   visibility: hidden;
+  will-change: transform, opacity;
   transition:
     opacity 90ms ease,
     transform 140ms cubic-bezier(0.16, 1, 0.3, 1),
@@ -263,22 +281,29 @@ defineExpose({ hitAt, R })
 }
 .wrap.vis {
   opacity: 1;
-  transform: scale(1);
+  transform: translateZ(0) scale(1);
   visibility: visible;
   transition:
     opacity 90ms ease,
     transform 140ms cubic-bezier(0.16, 1, 0.3, 1),
     visibility 0s;
 }
+.wrap.warm {
+  left: 8px !important;
+  top: 8px !important;
+  visibility: visible;
+  opacity: 0.001;
+  transform: translateZ(0);
+  transition: none;
+}
 .svg {
   display: block;
-  filter: drop-shadow(0 18px 44px rgba(8, 10, 28, 0.72)) drop-shadow(0 0 22px rgba(255, 45, 120, 0.18));
+  filter: drop-shadow(0 12px 28px rgba(8, 10, 28, 0.55));
 }
 .halo {
   fill: none;
   stroke: rgba(255, 45, 120, 0.28);
   stroke-width: 2;
-  filter: url(#rs-glow);
 }
 .plate {
   fill: url(#rs-plate);
@@ -338,7 +363,6 @@ defineExpose({ hitAt, R })
   stroke-dasharray: 48 140;
   stroke-dashoffset: 18;
   opacity: 0.95;
-  filter: url(#rs-glow);
 }
 .aim {
   stroke: #ff2d78;

@@ -9,6 +9,10 @@ contextBridge.exposeInMainWorld('redshot', {
     ipcRenderer.removeAllListeners('blank')
     ipcRenderer.on('blank', (_, id) => cb(id))
   },
+  onShown: (cb) => {
+    ipcRenderer.removeAllListeners('shown')
+    ipcRenderer.on('shown', () => cb())
+  },
   copy: (buf) => ipcRenderer.invoke('copy', buf),
   save: (buf) => ipcRenderer.invoke('save', buf),
   close: () => ipcRenderer.send('close-overlay'),

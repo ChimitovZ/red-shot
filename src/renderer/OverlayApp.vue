@@ -149,7 +149,8 @@ function applyStart(data) {
     syncHint()
     nextTick(() => {
       makeBase()
-      requestAnimationFrame(() => window.redshot.painted())
+      const done = () => requestAnimationFrame(() => window.redshot.painted())
+      ringRef.value?.warm ? ringRef.value.warm(done) : done()
     })
   } catch (e) {
     logErr('applyStart', e)
@@ -722,6 +723,7 @@ function onKey(e) {
 onMounted(() => {
   window.redshot.onStart(applyStart)
   window.redshot.onBlank(blank)
+  window.redshot.onShown(() => ringRef.value?.warm())
   window.redshot.uiReady()
   window.addEventListener('keydown', onKey)
   window.addEventListener('mousedown', onMouseDown, true)

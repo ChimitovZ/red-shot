@@ -235,6 +235,7 @@ async function startCapture(mode) {
     placeOverlay(packed.virt)
     await waitPainted({ ...packed, mode })
     overlay.showInactive()
+    overlay.webContents.send('shown')
     overlay.focus()
   } catch (e) {
     error(`startCapture ${mode}`, e)
