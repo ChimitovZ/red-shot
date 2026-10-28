@@ -11,6 +11,12 @@ export const TOOLS = [
   ['crop', 'Область', '▢']
 ]
 
+export const ACTIONS = [
+  ['save', 'Сохранить'],
+  ['copy', 'Копировать'],
+  ['exit', 'Выход']
+]
+
 export const COLORS = ['#ff2d78', '#d0d0d0', '#111111', '#f0c040', '#3d8bff', '#3cb371', '#ff7a1a', '#9b59b6']
 export const WIDTHS = [2, 4, 8, 14]
 

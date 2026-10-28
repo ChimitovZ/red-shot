@@ -3,16 +3,19 @@ import { computed, ref, watch } from 'vue'
 import {
   ArrowUpRight,
   Circle,
+  Copy,
   Crop,
   Eraser,
   Grid3x3,
   Highlighter,
   Minus,
   Pencil,
+  Save,
   Square,
-  Type
+  Type,
+  X
 } from '@lucide/vue'
-import { TOOLS, COLORS, WIDTHS } from './draw'
+import { ACTIONS, TOOLS, COLORS, WIDTHS } from './draw'
 
 const ICONS = {
   pencil: Pencil,
@@ -24,7 +27,10 @@ const ICONS = {
   text: Type,
   blur: Grid3x3,
   eraser: Eraser,
-  crop: Crop
+  crop: Crop,
+  save: Save,
+  copy: Copy,
+  exit: X
 }
 
 const props = defineProps({
@@ -46,6 +52,10 @@ const cOut = 142
 const cIn = 98
 const wOut = 86
 const wIn = 52
+const barY = R + 10
+const barH = 40
+const btnW = 124
+const btnGap = 0
 const last = ref(null)
 
 watch(
@@ -58,6 +68,7 @@ watch(
 const toolPolys = computed(() => sectorPolys(TOOLS.length, tIn, tOut, 0.028))
 const colorPolys = computed(() => sectorPolys(COLORS.length, cIn, cOut, 0.03))
 const thickPolys = computed(() => sectorPolys(WIDTHS.length, wIn, wOut, 0.04))
+const barW = ACTIONS.length * btnW + (ACTIONS.length - 1) * btnGap
 
 function sectorPolys(n, inner, outer, gap) {
   const out = []
@@ -89,7 +100,22 @@ function slot(n, ang) {
   return Math.min(n - 1, ((ang / (Math.PI * 2)) * n) | 0)
 }
 
+function hitBar(dx, dy) {
+  if (dy < barY || dy > barY + barH) return null
+  const x0 = -barW / 2
+  if (dx < x0 || dx > x0 + barW) return null
+  const i = Math.floor((dx - x0) / (btnW + btnGap))
+  if (i < 0 || i >= ACTIONS.length) return null
+  if (dx - x0 - i * (btnW + btnGap) > btnW) return null
+  return { kind: 'action', i }
+}
+
 function hitAt(dx, dy) {
+  const bar = hitBar(dx, dy)
+  if (bar) {
+    last.value = bar
+    return bar
+  }
   const r = Math.hypot(dx, dy)
   let ang = Math.atan2(dy, dx) + Math.PI / 2
   if (ang < 0) ang += Math.PI * 2
@@ -98,7 +124,7 @@ function hitAt(dx, dy) {
   else if (r >= cIn && r <= cOut) h = { kind: 'color', i: slot(COLORS.length, ang) }
   else if (r >= wIn && r <= wOut) h = { kind: 'width', i: slot(WIDTHS.length, ang) }
   else if (r < wIn) h = null
-  else if (last.value && r <= tOut + 18) h = last.value
+  else if (last.value && last.value.kind !== 'action' && r <= tOut + 18) h = last.value
   last.value = h
   return h
 }
@@ -109,6 +135,7 @@ const label = computed(() => {
   const h = hit.value
   if (!h) return TOOLS.find((t) => t[0] === props.tool)?.[1] || ''
   if (h.kind === 'tool') return TOOLS[h.i][1]
+  if (h.kind === 'action') return ACTIONS[h.i][1]
   if (h.kind === 'color') return 'Цвет'
   return 'Толщина ' + WIDTHS[h.i]
 })
@@ -116,6 +143,7 @@ const label = computed(() => {
 const aim = computed(() => {
   const dx = props.hx - props.x
   const dy = props.hy - props.y
+  if (hitBar(dx, dy)) return null
   const r = Math.min(tOut - 8, Math.hypot(dx, dy))
   if (r < wIn) return null
   const a = Math.atan2(dy, dx)
@@ -205,6 +233,17 @@ defineExpose({ hitAt, R })
       <component :is="ICONS[TOOLS[i][0]]" :size="22" :stroke-width="1.7" />
     </div>
     <div class="cap" :class="{ acc: !!hit }">{{ label }}</div>
+    <div class="bar">
+      <div
+        v-for="(a, i) in ACTIONS"
+        :key="a[0]"
+        class="abtn"
+        :class="{ on: hit?.kind === 'action' && hit.i === i, flash: flash === a[0] }"
+      >
+        <component :is="ICONS[a[0]]" :size="18" :stroke-width="2" />
+        {{ a[1] }}
+      </div>
+    </div>
   </div>
 </template>
 
@@ -346,5 +385,42 @@ defineExpose({ hitAt, R })
 }
 .cap.acc {
   color: #ff5a9a;
+}
+.bar {
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  display: flex;
+  overflow: hidden;
+  margin-top: 10px;
+  border-radius: 12px;
+  background: #1c1f40;
+  border: 1px solid #3a4074;
+  box-shadow: 0 10px 24px rgba(8, 10, 28, 0.45);
+  transform: translateX(-50%);
+}
+.abtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  box-sizing: border-box;
+  width: 124px;
+  height: 40px;
+  border: none;
+  border-right: 1px solid #3a4074;
+  color: #c8cce0;
+  font: 600 13px/1 'Segoe UI', sans-serif;
+  transition:
+    background 100ms ease,
+    color 100ms ease;
+}
+.abtn:last-child {
+  border-right: none;
+}
+.abtn.on,
+.abtn.flash {
+  background: #ff2d78;
+  color: #fff;
 }
 </style>

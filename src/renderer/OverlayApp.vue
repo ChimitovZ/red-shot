@@ -2,7 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { Redo2, Square, Undo2 } from '@lucide/vue'
 import RingMenu from './RingMenu.vue'
-import { arrowFromBox, blit, COLORS, cursorName, measureTextW, replay, showPreview, strokeLast, textBg, textBox, textHandle, TOOLS, WIDTHS } from './draw'
+import { ACTIONS, arrowFromBox, blit, COLORS, cursorName, measureTextW, replay, showPreview, strokeLast, textBg, textBox, textHandle, TOOLS, WIDTHS } from './draw'
 import { logErr } from './log'
 
 const SNAP = 28
@@ -243,9 +243,13 @@ watch(showGuides, (v) => {
   if (v) nextTick(paintLoupe)
 })
 
-const cursorNow = computed(() =>
-  selecting() || (geoOn() && !texting.on && !ring.show) ? 'none' : cursorName(tool.value)
-)
+const cursorNow = computed(() => {
+  if (ring.show) {
+    const R = ringRef.value?.R || 228
+    return Math.hypot(ring.hx - ring.x, ring.hy - ring.y) > R ? 'pointer' : 'none'
+  }
+  return selecting() || (geoOn() && !texting.on) ? 'none' : cursorName(tool.value)
+})
 
 const aimLabel = computed(() => {
   const p = `${aim.x}, ${aim.y}`
@@ -448,10 +452,11 @@ function redoLast() {
 function openRing(x, y) {
   const R = ringRef.value?.R || 228
   ring.x = Math.min(vw.value - R - 8, Math.max(R + 8, x))
-  ring.y = Math.min(vh.value - R - 8, Math.max(R + 8, y))
+  ring.y = Math.min(vh.value - R - 64, Math.max(R + 8, y))
   ring.hx = x
   ring.hy = y
   ring.show = true
+  ring.flash = ''
   ringLmb = false
 }
 
@@ -469,6 +474,14 @@ function applyRing() {
   }
   if (h.kind === 'color') color.value = COLORS[h.i]
   if (h.kind === 'width') width.value = WIDTHS[h.i]
+  if (h.kind === 'action') {
+    const id = ACTIONS[h.i][0]
+    ring.show = false
+    ringLmb = false
+    if (id === 'save') saveOut()
+    else if (id === 'copy') copyOut()
+    else window.redshot.close()
+  }
 }
 
 function pickRing() {
