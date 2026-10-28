@@ -8,7 +8,7 @@ const defaults = () => ({
     window: 'Alt+PrintScreen',
     screen: 'Control+PrintScreen'
   },
-  saveDir: app.getPath('pictures'),
+  saveDir: join(app.getPath('pictures'), 'RedShot'),
   autostart: false
 })
 
@@ -21,7 +21,9 @@ export function loadSettings() {
   try {
     if (!existsSync(file())) return d
     const raw = JSON.parse(readFileSync(file(), 'utf8'))
-    return { ...d, ...raw, hotkeys: { ...d.hotkeys, ...raw.hotkeys } }
+    const s = { ...d, ...raw, hotkeys: { ...d.hotkeys, ...raw.hotkeys } }
+    if (raw.saveDir === app.getPath('pictures')) s.saveDir = d.saveDir
+    return s
   } catch {
     return d
   }

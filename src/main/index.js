@@ -1,6 +1,6 @@
 import { app, BrowserWindow, Tray, Menu, globalShortcut, ipcMain, clipboard, dialog, nativeImage, screen, net } from 'electron'
 import { join } from 'path'
-import { writeFileSync } from 'fs'
+import { mkdirSync, writeFileSync } from 'fs'
 import { error, info, log, logPath, openLog } from './log'
 import { captureDesktop, cursorDisplay, dipOnVirt, foregroundDip, overlayBounds, setCursorDip, toOverlay, virtualDip } from './capture'
 import { loadSettings, saveSettings } from './store'
@@ -16,6 +16,22 @@ let uiWait = []
 const loadTries = new WeakMap()
 
 const delay = (ms) => new Promise((r) => setTimeout(r, ms))
+
+function shotDir() {
+  const d = new Date()
+  const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  return join(settings.saveDir, ym)
+}
+
+function autoSavePng(buf) {
+  try {
+    const dir = shotDir()
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, `redshot-${Date.now()}.png`), Buffer.from(buf))
+  } catch (e) {
+    error('auto-save', e)
+  }
+}
 
 function markUiReady() {
   uiReady = true
@@ -290,6 +306,7 @@ app.whenReady().then(async () => {
       const img = nativeImage.createFromBuffer(Buffer.from(buf))
       if (img.isEmpty()) error(`copy empty image bytes=${buf?.byteLength || buf?.length}`)
       clipboard.writeImage(img)
+      autoSavePng(buf)
       hideOverlay()
       return true
     } catch (e) {
@@ -300,7 +317,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('save', async (_, buf) => {
     try {
       const res = await dialog.showSaveDialog(overlay, {
-        defaultPath: join(settings.saveDir, `redshot-${Date.now()}.png`),
+        defaultPath: join(shotDir(), `redshot-${Date.now()}.png`),
         filters: [{ name: 'PNG', extensions: ['png'] }]
       })
       if (res.canceled || !res.filePath) return false
