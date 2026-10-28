@@ -123,6 +123,7 @@ function createOverlay() {
     hasShadow: false,
     transparent: true,
     backgroundColor: '#00000000',
+    paintWhenInitiallyHidden: true,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
@@ -232,10 +233,8 @@ async function startCapture(mode) {
     info(`captured ${packed.shots.length} shot(s) ${packed.shots.map((s) => `${s.pw}x${s.ph}`).join(',')}`)
     await overlayReady()
     placeOverlay(packed.virt)
-    overlay.setOpacity(0)
-    overlay.showInactive()
     await waitPainted({ ...packed, mode })
-    overlay.setOpacity(1)
+    overlay.showInactive()
     overlay.focus()
   } catch (e) {
     error(`startCapture ${mode}`, e)
@@ -246,7 +245,6 @@ async function startCapture(mode) {
 
 function hideOverlay() {
   if (!overlay) return
-  overlay.setOpacity(0)
   overlay.webContents.send('blank')
   overlay.hide()
 }
@@ -286,6 +284,7 @@ function makeTray() {
 }
 
 if (!app.requestSingleInstanceLock()) app.quit()
+app.commandLine.appendSwitch('wm-window-animations-disabled')
 
 app.whenReady().then(async () => {
   info(`ready log=${logPath()} ELECTRON_RENDERER_URL=${process.env.ELECTRON_RENDERER_URL || ''}`)
