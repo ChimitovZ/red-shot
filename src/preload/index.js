@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('redshot', {
   copy: (buf) => ipcRenderer.invoke('copy', buf),
   save: (buf) => ipcRenderer.invoke('save', buf),
   close: () => ipcRenderer.send('close-overlay'),
+  setCursor: (x, y) => ipcRenderer.send('set-cursor', { x, y }),
   blanked: (id) => ipcRenderer.send('blanked', id),
   getSettings: () => ipcRenderer.invoke('get-settings'),
   setSettings: (s) => ipcRenderer.invoke('set-settings', s),

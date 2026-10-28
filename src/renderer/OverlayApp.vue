@@ -1,16 +1,16 @@
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { Redo2, Square, Undo2 } from '@lucide/vue'
 import RingMenu from './RingMenu.vue'
 import { arrowFromBox, blit, COLORS, cursorName, measureTextW, replay, showPreview, strokeLast, textBg, textBox, textHandle, TOOLS, WIDTHS } from './draw'
 import { logErr } from './log'
 
 const SNAP = 28
-const MAG = 8
-const MAG_SRC = 15
+const MAG = 12
+const MAG_SRC = 17
 const MAG_PX = MAG * MAG_SRC
+const GEO = new Set(['arrow', 'line', 'rect', 'ellipse', 'blur'])
 let lastFont = 18
-let nudged = false
 
 let shots = []
 const sel = reactive({ x: 0, y: 0, w: 0, h: 0, on: false })
@@ -88,7 +88,6 @@ function blank(id) {
   texting.drag = ''
   ring.show = false
   aim.on = false
-  nudged = false
   base = null
   overlayC = null
   const c = view.value
@@ -136,7 +135,6 @@ function applyStart(data) {
     texting.drag = ''
     ring.show = false
     aim.on = false
-    nudged = false
     vw.value = data.virt.width
     vh.value = data.virt.height
     shots = data.shots || []
@@ -151,6 +149,10 @@ function applyStart(data) {
   } catch (e) {
     logErr('applyStart', e)
   }
+}
+
+function geoOn() {
+  return GEO.has(tool.value)
 }
 
 function clampAim() {
@@ -175,9 +177,10 @@ function boxFrom(ax, ay, bx, by) {
 }
 
 function paintLoupe() {
-  if (sel.on || !aim.on) return
+  if (!showGuides.value) return
   const c = loupeEl.value
-  if (!c || !base) {
+  const src = view.value?.width ? view.value : base
+  if (!c || !src) {
     if (!c) nextTick(paintLoupe)
     return
   }
@@ -190,7 +193,7 @@ function paintLoupe() {
   const half = (MAG_SRC - 1) / 2
   ctx.fillStyle = '#000'
   ctx.fillRect(0, 0, MAG_PX, MAG_PX)
-  ctx.drawImage(base, aim.x - half, aim.y - half, MAG_SRC, MAG_SRC, 0, 0, MAG_PX, MAG_PX)
+  ctx.drawImage(src, aim.x - half, aim.y - half, MAG_SRC, MAG_SRC, 0, 0, MAG_PX, MAG_PX)
   ctx.strokeStyle = 'rgba(255,255,255,.14)'
   ctx.lineWidth = 1
   for (let i = 1; i < MAG_SRC; i++) {
@@ -217,10 +220,44 @@ const loupePos = computed(() => {
   return { x, y }
 })
 
+const showGuides = computed(
+  () => aim.on && !ring.show && !texting.on && (!sel.on || geoOn())
+)
+watch(showGuides, (v) => {
+  if (v) nextTick(paintLoupe)
+})
+
+const cursorNow = computed(() =>
+  !sel.on || (geoOn() && !texting.on && !ring.show) ? 'none' : cursorName(tool.value)
+)
+
 const aimLabel = computed(() => {
   const p = `${aim.x}, ${aim.y}`
-  return drag.on ? `${p} · ${sel.w}×${sel.h}` : p
+  if (drag.on) return `${p} · ${sel.w}×${sel.h}`
+  const pr = preview.value
+  if (pr?.a && pr?.b) return `${p} · ${Math.abs(pr.b.x - pr.a.x)}×${Math.abs(pr.b.y - pr.a.y)}`
+  return p
 })
+
+function trackAim(e) {
+  setAim(e.clientX, e.clientY)
+}
+
+function nudgeAim(e) {
+  if (!aim.on) return false
+  e.preventDefault()
+  const step = e.shiftKey ? 10 : 1
+  if (e.key === 'ArrowLeft') aim.x -= step
+  if (e.key === 'ArrowRight') aim.x += step
+  if (e.key === 'ArrowUp') aim.y -= step
+  if (e.key === 'ArrowDown') aim.y += step
+  clampAim()
+  window.redshot.setCursor(aim.x, aim.y)
+  if (drag.on) boxFrom(drag.x, drag.y, aim.x, aim.y)
+  if (drawing) moveItem(aim.x, aim.y)
+  paintLoupe()
+  return true
+}
 
 function inSel(x, y) {
   return sel.on && x >= sel.x && y >= sel.y && x <= sel.x + sel.w && y <= sel.y + sel.h
@@ -465,13 +502,16 @@ function onDown(e) {
     Object.assign(sel, { x: drag.x, y: drag.y, w: 0, h: 0 })
     return
   }
-  if (!inSel(e.clientX, e.clientY)) return
-  const i = hitText(e.clientX, e.clientY)
+  if (geoOn()) setAim(aim.on ? aim.x : e.clientX, aim.on ? aim.y : e.clientY)
+  const x = geoOn() ? aim.x : e.clientX
+  const y = geoOn() ? aim.y : e.clientY
+  if (!geoOn() && !inSel(x, y)) return
+  const i = hitText(x, y)
   if (i >= 0) {
     openText(i)
     return
   }
-  startItem(e.clientX, e.clientY)
+  startItem(x, y)
 }
 
 function onMove(e) {
@@ -484,9 +524,7 @@ function onMove(e) {
     return
   }
   if (!sel.on) {
-    if (nudged) {
-      if (e.movementX || e.movementY) setAim(aim.x + e.movementX, aim.y + e.movementY)
-    } else setAim(e.clientX, e.clientY)
+    trackAim(e)
     if (drag.on) boxFrom(drag.x, drag.y, aim.x, aim.y)
     paintLoupe()
     return
@@ -498,6 +536,12 @@ function onMove(e) {
   }
   if (texting.drag === 'handle') {
     texting.b = { x: e.clientX, y: e.clientY }
+    return
+  }
+  if (geoOn()) {
+    trackAim(e)
+    if (drawing) moveItem(aim.x, aim.y)
+    paintLoupe()
     return
   }
   if (drawing) moveItem(e.clientX, e.clientY)
@@ -615,20 +659,7 @@ function onKey(e) {
     }
     return
   }
-  if (!sel.on && e.key.startsWith('Arrow')) {
-    e.preventDefault()
-    const step = e.shiftKey ? 10 : 1
-    if (!aim.on) return
-    if (e.key === 'ArrowLeft') aim.x -= step
-    if (e.key === 'ArrowRight') aim.x += step
-    if (e.key === 'ArrowUp') aim.y -= step
-    if (e.key === 'ArrowDown') aim.y += step
-    nudged = true
-    clampAim()
-    if (drag.on) boxFrom(drag.x, drag.y, aim.x, aim.y)
-    paintLoupe()
-    return
-  }
+  if (e.key.startsWith('Arrow') && (!sel.on || geoOn()) && nudgeAim(e)) return
   if (e.key === 'Escape') {
     window.redshot.close()
     return
@@ -680,7 +711,7 @@ const dimRects = computed(() => {
 <template>
   <div
     class="root"
-    :style="{ cursor: sel.on ? cursorName(tool) : 'none' }"
+    :style="{ cursor: cursorNow }"
     @pointerdown="onDown"
     @pointermove="onMove"
     @pointerup="onUp"
@@ -693,7 +724,7 @@ const dimRects = computed(() => {
       class="frame"
       :style="{ left: sel.x + 'px', top: sel.y + 'px', width: sel.w + 'px', height: sel.h + 'px' }"
     />
-    <template v-if="!sel.on && aim.on">
+    <template v-if="showGuides">
       <div class="rule-h" :style="{ top: aim.y + 'px' }" />
       <div class="rule-v" :style="{ left: aim.x + 'px' }" />
       <div class="aim-dot" :style="{ left: aim.x + 'px', top: aim.y + 'px' }" />

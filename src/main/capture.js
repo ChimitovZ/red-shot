@@ -5,6 +5,7 @@ import koffi from 'koffi'
 const user32 = koffi.load('user32.dll')
 const gdi32 = koffi.load('gdi32.dll')
 
+const SetCursorPos = user32.func('int __stdcall SetCursorPos(int, int)')
 const GetDC = user32.func('void* __stdcall GetDC(void*)')
 const ReleaseDC = user32.func('int __stdcall ReleaseDC(void*, void*)')
 const GetForegroundWindow = user32.func('void* __stdcall GetForegroundWindow()')
@@ -85,6 +86,15 @@ export function virtualDip() {
     b = Math.max(b, d.bounds.y + d.bounds.height)
   }
   return { x, y, width: r - x, height: b - y }
+}
+
+export function setCursorDip(x, y) {
+  try {
+    const s = screen.dipToScreenPoint({ x: Math.round(x), y: Math.round(y) })
+    SetCursorPos(s.x, s.y)
+  } catch (e) {
+    error('setCursorDip', e)
+  }
 }
 
 export function cursorDisplay() {

@@ -2,7 +2,7 @@ import { app, BrowserWindow, Tray, Menu, globalShortcut, ipcMain, clipboard, dia
 import { join } from 'path'
 import { writeFileSync } from 'fs'
 import { error, info, log, logPath, openLog } from './log'
-import { captureDesktop, cursorDisplay, dipOnVirt, foregroundDip, overlayBounds, toOverlay, virtualDip } from './capture'
+import { captureDesktop, cursorDisplay, dipOnVirt, foregroundDip, overlayBounds, setCursorDip, toOverlay, virtualDip } from './capture'
 import { loadSettings, saveSettings } from './store'
 import { trayIcon } from './icon'
 
@@ -312,6 +312,11 @@ app.whenReady().then(async () => {
     }
   })
   ipcMain.on('close-overlay', hideOverlay)
+  ipcMain.on('set-cursor', (_, p) => {
+    if (!overlay || !p) return
+    const b = overlay.getBounds()
+    setCursorDip(b.x + p.x, b.y + p.y)
+  })
   ipcMain.handle('get-settings', () => settings)
   ipcMain.handle('set-settings', (_, s) => {
     try {
