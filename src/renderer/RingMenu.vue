@@ -82,16 +82,16 @@ function warm(done) {
   })
 }
 
-const toolPolys = computed(() => sectorPolys(TOOLS.length, tIn, tOut, 0.028))
-const colorPolys = computed(() => sectorPolys(COLORS.length, cIn, cOut, 0.03))
-const thickPolys = computed(() => sectorPolys(WIDTHS.length, wIn, wOut, 0.04))
+const toolPolys = computed(() => sectorPolys(TOOLS.length, tIn, tOut))
+const colorPolys = computed(() => sectorPolys(COLORS.length, cIn, cOut))
+const thickPolys = computed(() => sectorPolys(WIDTHS.length, wIn, wOut))
 const barW = ACTIONS.length * btnW + (ACTIONS.length - 1) * btnGap
 
-function sectorPolys(n, inner, outer, gap) {
+function sectorPolys(n, inner, outer) {
   const out = []
   for (let i = 0; i < n; i++) {
-    const a0 = (Math.PI * 2 * i) / n - Math.PI / 2 + gap
-    const a1 = (Math.PI * 2 * (i + 1)) / n - Math.PI / 2 - gap
+    const a0 = (Math.PI * 2 * i) / n - Math.PI / 2
+    const a1 = (Math.PI * 2 * (i + 1)) / n - Math.PI / 2
     const mid = (a0 + a1) / 2
     const ir = (inner + outer) / 2
     out.push({
