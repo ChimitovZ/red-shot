@@ -1,5 +1,5 @@
 import { app, shell } from 'electron'
-import { appendFileSync, mkdirSync } from 'fs'
+import { appendFile, mkdirSync } from 'fs'
 import { dirname, join } from 'path'
 import { tmpdir } from 'os'
 
@@ -26,7 +26,7 @@ export function log(level, msg, err) {
     console.error(text.trimEnd())
     const p = file()
     mkdirSync(dirname(p), { recursive: true })
-    appendFileSync(p, text)
+    appendFile(p, text, () => {})
   } catch (e) {
     console.error('log write failed', e)
   }

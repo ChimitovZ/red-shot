@@ -2,7 +2,7 @@ import { app, BrowserWindow, Tray, Menu, globalShortcut, ipcMain, clipboard, dia
 import { join } from 'path'
 import { writeFileSync } from 'fs'
 import { error, info, log, logPath, openLog } from './log'
-import { captureDesktop, foregroundDip, virtualDip } from './capture'
+import { captureDesktop, cursorDisplay, dipOnVirt, foregroundDip, overlayBounds, toOverlay, virtualDip } from './capture'
 import { loadSettings, saveSettings } from './store'
 import { trayIcon } from './icon'
 
@@ -109,7 +109,8 @@ function createOverlay() {
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
-      contextIsolation: true
+      contextIsolation: true,
+      backgroundThrottling: false
     }
   })
   overlay.setMenu(null)
@@ -125,8 +126,8 @@ async function overlayReady() {
   await waitUi()
 }
 
-function placeOverlay() {
-  const v = virtualDip()
+function placeOverlay(b) {
+  const v = b || virtualDip()
   overlay.setBounds({ x: v.x, y: v.y, width: v.width, height: v.height })
   overlay.setAlwaysOnTop(true, 'screen-saver')
 }
@@ -189,25 +190,35 @@ async function startCapture(mode) {
   busy = true
   try {
     info(`startCapture ${mode}`)
-    if (overlay?.isVisible()) overlay.hide()
-    await delay(80)
-    const data = captureDesktop()
+    if (overlay?.isVisible()) {
+      hideOverlay()
+      await delay(50)
+    }
+    let selection = null
+    let clip = null
+    if (mode === 'window') {
+      selection = foregroundDip()
+      clip = selection
+      if (!selection) error('window selection empty')
+    } else if (mode === 'screen') {
+      selection = dipOnVirt(cursorDisplay().bounds, virtualDip())
+      clip = selection
+    }
+    const data = captureDesktop(clip)
     if (!data?.shots?.length) {
       error(`capture empty mode=${mode} virt=${JSON.stringify(data?.virt)}`)
       return
     }
-    info(`captured ${data.shots.length} shot(s) virt=${JSON.stringify(data.virt)} sizes=${data.shots.map((s) => `${s.w}x${s.h}/${s.b64.length}`).join(',')}`)
-    let selection = null
-    if (mode === 'screen') selection = { x: 0, y: 0, w: data.virt.width, h: data.virt.height }
-    if (mode === 'window') {
-      selection = foregroundDip()
-      if (!selection) error('window selection empty')
-    }
+    if (mode === 'screen' && !selection) selection = { x: 0, y: 0, w: data.virt.width, h: data.virt.height }
+    const ov = overlayBounds(data.virt, data.shots)
+    const packed = toOverlay(data.virt, ov, data.shots, selection)
+    info(`captured ${packed.shots.length} shot(s) ${packed.shots.map((s) => `${s.pw}x${s.ph}`).join(',')}`)
     await overlayReady()
-    placeOverlay()
-    overlay.webContents.send('start', { ...data, selection, mode })
+    await waitBlank()
+    placeOverlay(packed.virt)
     overlay.show()
     overlay.focus()
+    overlay.webContents.send('start', { ...packed, mode })
   } catch (e) {
     error(`startCapture ${mode}`, e)
   } finally {
@@ -216,7 +227,29 @@ async function startCapture(mode) {
 }
 
 function hideOverlay() {
-  if (overlay) overlay.hide()
+  if (!overlay) return
+  overlay.webContents.send('blank')
+  overlay.hide()
+}
+
+let blankN = 0
+function waitBlank() {
+  if (!overlay) return Promise.resolve()
+  const id = ++blankN
+  return new Promise((r) => {
+    const fn = (_, n) => {
+      if (n !== id) return
+      ipcMain.removeListener('blanked', fn)
+      clearTimeout(t)
+      r()
+    }
+    const t = setTimeout(() => {
+      ipcMain.removeListener('blanked', fn)
+      r()
+    }, 80)
+    ipcMain.on('blanked', fn)
+    overlay.webContents.send('blank', id)
+  })
 }
 
 function makeTray() {

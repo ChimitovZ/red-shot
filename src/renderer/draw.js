@@ -19,6 +19,11 @@ export function normRect(a, b) {
   return { x, y, w: Math.abs(b.x - a.x), h: Math.abs(b.y - a.y) }
 }
 
+let pxC
+function g2(c) {
+  return c._g2 || (c._g2 = c.getContext('2d'))
+}
+
 export function pixelate(ctx, x, y, w, h, block = 12) {
   x = Math.max(0, x | 0)
   y = Math.max(0, y | 0)
@@ -26,14 +31,15 @@ export function pixelate(ctx, x, y, w, h, block = 12) {
   h = Math.max(1, h | 0)
   const sw = Math.max(1, Math.ceil(w / block))
   const sh = Math.max(1, Math.ceil(h / block))
-  const tmp = document.createElement('canvas')
-  tmp.width = sw
-  tmp.height = sh
-  const t = tmp.getContext('2d')
+  if (!pxC) pxC = document.createElement('canvas')
+  pxC.width = sw
+  pxC.height = sh
+  pxC._g2 = null
+  const t = g2(pxC)
   t.imageSmoothingEnabled = false
   t.drawImage(ctx.canvas, x, y, w, h, 0, 0, sw, sh)
   ctx.imageSmoothingEnabled = false
-  ctx.drawImage(tmp, 0, 0, sw, sh, x, y, w, h)
+  ctx.drawImage(pxC, 0, 0, sw, sh, x, y, w, h)
   ctx.imageSmoothingEnabled = true
 }
 
@@ -179,28 +185,62 @@ export function drawItem(ctx, item) {
   ctx.globalCompositeOperation = 'source-over'
 }
 
-export function replay(view, base, overlay, items, preview) {
-  const octx = overlay.getContext('2d')
+function blurItem(octx, overlay, base, it) {
+  const r = normRect(it.a, it.b)
+  if (r.w < 3 || r.h < 3) return
+  const t = document.createElement('canvas')
+  t.width = r.w
+  t.height = r.h
+  const tctx = g2(t)
+  tctx.drawImage(base, r.x, r.y, r.w, r.h, 0, 0, r.w, r.h)
+  tctx.drawImage(overlay, r.x, r.y, r.w, r.h, 0, 0, r.w, r.h)
+  pixelate(tctx, 0, 0, r.w, r.h, 12)
+  octx.drawImage(t, r.x, r.y)
+}
+
+export function redrawOverlay(overlay, base, items) {
+  const octx = g2(overlay)
+  octx.setTransform(1, 0, 0, 1, 0, 0)
+  octx.globalAlpha = 1
+  octx.globalCompositeOperation = 'source-over'
   octx.clearRect(0, 0, overlay.width, overlay.height)
-  const list = preview ? items.concat([preview]) : items
-  for (const it of list) {
-    if (it.tool === 'blur') {
-      const r = normRect(it.a, it.b)
-      if (r.w < 3 || r.h < 3) continue
-      const t = document.createElement('canvas')
-      t.width = r.w
-      t.height = r.h
-      const tctx = t.getContext('2d')
-      tctx.drawImage(base, r.x, r.y, r.w, r.h, 0, 0, r.w, r.h)
-      tctx.drawImage(overlay, r.x, r.y, r.w, r.h, 0, 0, r.w, r.h)
-      pixelate(tctx, 0, 0, r.w, r.h, 12)
-      octx.drawImage(t, r.x, r.y)
-    } else drawItem(octx, it)
+  for (const it of items) {
+    if (it.tool === 'blur') blurItem(octx, overlay, base, it)
+    else drawItem(octx, it)
   }
-  const v = view.getContext('2d')
+}
+
+export function blit(view, base, overlay) {
+  const v = g2(view)
+  v.setTransform(1, 0, 0, 1, 0, 0)
+  v.globalAlpha = 1
+  v.globalCompositeOperation = 'source-over'
   v.clearRect(0, 0, view.width, view.height)
   v.drawImage(base, 0, 0)
   v.drawImage(overlay, 0, 0)
+}
+
+export function showPreview(view, base, overlay, preview) {
+  blit(view, base, overlay)
+  if (!preview) return
+  const v = g2(view)
+  if (preview.tool === 'blur') {
+    const r = normRect(preview.a, preview.b)
+    if (r.w >= 3 && r.h >= 3) pixelate(v, r.x, r.y, r.w, r.h, 12)
+  } else drawItem(v, preview)
+}
+
+export function strokeLast(overlay, view, item) {
+  const pts = item.pts
+  const seg = pts && pts.length > 1 ? { ...item, pts: pts.slice(-2) } : item
+  drawItem(g2(overlay), seg)
+  if (view) drawItem(g2(view), seg)
+}
+
+export function replay(view, base, overlay, items, preview) {
+  redrawOverlay(overlay, base, items)
+  if (preview) showPreview(view, base, overlay, preview)
+  else blit(view, base, overlay)
 }
 
 export function cursorName(tool) {

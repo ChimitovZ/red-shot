@@ -2,13 +2,13 @@
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { Redo2, Square, Undo2 } from '@lucide/vue'
 import RingMenu from './RingMenu.vue'
-import { arrowFromBox, COLORS, cursorName, measureTextW, replay, textBg, textBox, textHandle, TOOLS, WIDTHS } from './draw'
+import { arrowFromBox, blit, COLORS, cursorName, measureTextW, replay, showPreview, strokeLast, textBg, textBox, textHandle, TOOLS, WIDTHS } from './draw'
 import { logErr } from './log'
 
 const SNAP = 28
 let lastFont = 18
 
-const shots = ref([])
+let shots = []
 const sel = reactive({ x: 0, y: 0, w: 0, h: 0, on: false })
 const drag = reactive({ on: false, x: 0, y: 0 })
 const tool = ref('pencil')
@@ -31,12 +31,15 @@ let base = null
 let overlayC = null
 let drawing = false
 
+function liveItems() {
+  return texting.on && texting.edit >= 0 ? items.filter((_, i) => i !== texting.edit) : items
+}
+
 function paint() {
   const c = view.value
   if (!c || !base || !overlayC) return
   try {
-    const list = texting.on && texting.edit >= 0 ? items.filter((_, i) => i !== texting.edit) : items
-    replay(c, base, overlayC, list, preview.value)
+    replay(c, base, overlayC, liveItems(), preview.value)
   } catch (e) {
     logErr('paint', e)
   }
@@ -45,9 +48,51 @@ function paint() {
 function sizeLayer(c, w, h) {
   c.width = w
   c.height = h
+  c._g2 = null
 }
 
-async function makeBase() {
+function rgba(s) {
+  const p = s.pixels
+  const n = s.pw * s.ph * 4
+  if (p instanceof Uint8ClampedArray && p.length === n) return p
+  if (p?.buffer && p.byteLength >= n) return new Uint8ClampedArray(p.buffer, p.byteOffset, n)
+  const u = new Uint8ClampedArray(n)
+  u.set(p?.data || p)
+  return u
+}
+
+let stamp
+function stampShot(s) {
+  if (!stamp) stamp = document.createElement('canvas')
+  stamp.width = s.pw
+  stamp.height = s.ph
+  stamp.getContext('2d').putImageData(new ImageData(rgba(s), s.pw, s.ph), 0, 0)
+  return stamp
+}
+
+function blank(id) {
+  shots = []
+  items.length = 0
+  redo.length = 0
+  preview.value = null
+  drawing = false
+  drag.on = false
+  texting.on = false
+  texting.edit = -1
+  texting.drag = ''
+  ring.show = false
+  base = null
+  overlayC = null
+  const c = view.value
+  if (c) {
+    const ctx = c.getContext('2d')
+    ctx.fillStyle = '#000'
+    ctx.fillRect(0, 0, c.width, c.height)
+  }
+  window.redshot.blanked(id)
+}
+
+function makeBase() {
   try {
     base = document.createElement('canvas')
     overlayC = document.createElement('canvas')
@@ -56,18 +101,13 @@ async function makeBase() {
     const ctx = base.getContext('2d')
     ctx.fillStyle = '#000'
     ctx.fillRect(0, 0, base.width, base.height)
-    await Promise.all(
-      shots.value.map(async (s, i) => {
-        try {
-          const img = new Image()
-          img.src = s.src
-          await img.decode()
-          ctx.drawImage(img, s.x, s.y, s.w, s.h)
-        } catch (e) {
-          logErr(`shot decode ${i} ${s.w}x${s.h}`, e)
-        }
-      })
-    )
+    shots.forEach((s, i) => {
+      try {
+        ctx.drawImage(stampShot(s), s.x, s.y, s.w, s.h)
+      } catch (e) {
+        logErr(`shot ${i} ${s.pw}x${s.ph}`, e)
+      }
+    })
     if (view.value) sizeLayer(view.value, vw.value, vh.value)
     paint()
   } catch (e) {
@@ -83,10 +123,12 @@ function applyStart(data) {
     texting.on = false
     texting.edit = -1
     drawing = false
+    drag.on = false
+    texting.drag = ''
     ring.show = false
     vw.value = data.virt.width
     vh.value = data.virt.height
-    shots.value = data.shots.map((s) => ({ ...s, src: 'data:image/png;base64,' + s.b64 }))
+    shots = data.shots || []
     if (data.selection) {
       Object.assign(sel, { ...data.selection, on: true })
       hint.value = 'ПКМ — меню · Ctrl+Z — отмена · Enter — копировать · Esc — выход'
@@ -181,12 +223,18 @@ function commitText() {
 }
 
 function downMove(e) {
+  try {
+    e.currentTarget.setPointerCapture(e.pointerId)
+  } catch {}
   texting.drag = 'text'
   tOff.x = e.clientX - texting.x
   tOff.y = e.clientY - texting.y
 }
 
 function downHandle(e) {
+  try {
+    e.currentTarget.setPointerCapture(e.pointerId)
+  } catch {}
   texting.drag = 'handle'
   texting.b = { x: e.clientX, y: e.clientY }
 }
@@ -211,18 +259,28 @@ function startItem(x, y) {
   drawing = true
   if (t === 'pencil' || t === 'marker' || t === 'eraser') {
     preview.value = { tool: t, color: color.value, width: t === 'marker' ? width.value * 2 : width.value, pts: [{ x, y }] }
-  } else {
-    preview.value = { tool: t, color: color.value, width: width.value, a: { x, y }, b: { x, y } }
+    return
   }
-  paint()
+  preview.value = { tool: t, color: color.value, width: width.value, a: { x, y }, b: { x, y } }
+  const c = view.value
+  if (c && base && overlayC) showPreview(c, base, overlayC, preview.value)
 }
 
 function moveItem(x, y) {
   const p = preview.value
   if (!p) return
-  if (p.pts) p.pts.push({ x, y })
-  else p.b = { x, y }
-  paint()
+  const c = view.value
+  if (p.pts) {
+    p.pts.push({ x, y })
+    if (!c || !overlayC) return
+    if (p.tool === 'eraser') {
+      strokeLast(overlayC, null, p)
+      blit(c, base, overlayC)
+    } else strokeLast(overlayC, c, p)
+    return
+  }
+  p.b = { x, y }
+  if (c && base && overlayC) showPreview(c, base, overlayC, p)
 }
 
 function endItem() {
@@ -296,6 +354,9 @@ function onMouseDown(e) {
 }
 
 function onDown(e) {
+  try {
+    e.currentTarget.setPointerCapture(e.pointerId)
+  } catch {}
   if (e.button === 2) {
     if (!sel.on) return
     cancelItem()
@@ -361,6 +422,16 @@ function onMove(e) {
 }
 
 function onUp(e) {
+  if (e.type === 'pointercancel') {
+    ringLmb = false
+    texting.drag = ''
+    if (drag.on) {
+      drag.on = false
+      if (!(sel.w > 3 && sel.h > 3)) Object.assign(sel, { x: 0, y: 0, w: 0, h: 0, on: false })
+    }
+    cancelItem()
+    return
+  }
   if (e.button === 0) ringLmb = false
   if (e.button === 2) {
     if (ring.show) pickRing()
@@ -389,23 +460,21 @@ function onUp(e) {
 async function exportPng() {
   try {
     if (!sel.on) return null
-    const sc = Math.max(1, ...shots.value.map((s) => s.scale || 1))
+    const sc = Math.max(1, ...shots.map((s) => s.scale || 1))
     const c = document.createElement('canvas')
     c.width = Math.max(1, Math.round(sel.w * sc))
     c.height = Math.max(1, Math.round(sel.h * sc))
     const ctx = c.getContext('2d')
-    for (const s of shots.value) {
+    for (const s of shots) {
       const ix = Math.max(sel.x, s.x)
       const iy = Math.max(sel.y, s.y)
       const ir = Math.min(sel.x + sel.w, s.x + s.w)
       const ib = Math.min(sel.y + sel.h, s.y + s.h)
       if (ir <= ix || ib <= iy) continue
-      const img = new Image()
-      img.src = s.src
-      await img.decode()
-      const k = img.width / s.w
+      const src = stampShot(s)
+      const k = s.pw / s.w
       ctx.drawImage(
-        img,
+        src,
         (ix - s.x) * k,
         (iy - s.y) * k,
         (ir - ix) * k,
@@ -489,6 +558,7 @@ function onKey(e) {
 
 onMounted(() => {
   window.redshot.onStart(applyStart)
+  window.redshot.onBlank(blank)
   window.redshot.uiReady()
   window.addEventListener('keydown', onKey)
   window.addEventListener('mousedown', onMouseDown, true)
@@ -499,7 +569,7 @@ onUnmounted(() => {
   window.removeEventListener('mousedown', onMouseDown, true)
 })
 
-const dimRects = () => {
+const dimRects = computed(() => {
   if (!sel.on && !drag.on) return [{ x: 0, y: 0, w: '100%', h: '100%' }]
   const { x, y, w, h } = sel
   return [
@@ -508,7 +578,7 @@ const dimRects = () => {
     { x: 0, y, w: x + 'px', h: h + 'px' },
     { x: x + w, y, w: `calc(100% - ${x + w}px)`, h: h + 'px' }
   ]
-}
+})
 </script>
 
 <template>
@@ -518,16 +588,10 @@ const dimRects = () => {
     @pointerdown="onDown"
     @pointermove="onMove"
     @pointerup="onUp"
+    @pointercancel="onUp"
   >
-    <img
-      v-for="(s, i) in shots"
-      :key="i"
-      class="shot"
-      :src="s.src"
-      :style="{ left: s.x + 'px', top: s.y + 'px', width: s.w + 'px', height: s.h + 'px' }"
-    />
     <canvas ref="view" class="view" />
-    <div v-for="(d, i) in dimRects()" :key="i" class="dim" :style="{ left: d.x + 'px', top: d.y + 'px', width: d.w, height: d.h }" />
+    <div v-for="(d, i) in dimRects" :key="i" class="dim" :style="{ left: d.x + 'px', top: d.y + 'px', width: d.w, height: d.h }" />
     <div
       v-if="sel.on || drag.on"
       class="frame"
@@ -607,16 +671,11 @@ const dimRects = () => {
   position: fixed;
   inset: 0;
 }
-.shot,
 .view {
   position: absolute;
   left: 0;
   top: 0;
   pointer-events: none;
-}
-.view {
-  left: 0;
-  top: 0;
 }
 .dim {
   position: absolute;

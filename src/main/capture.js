@@ -1,4 +1,4 @@
-import { nativeImage, screen } from 'electron'
+import { screen } from 'electron'
 import { error } from './log'
 import koffi from 'koffi'
 
@@ -18,6 +18,10 @@ const DeleteObject = gdi32.func('int __stdcall DeleteObject(void*)')
 const GetDIBits = gdi32.func('int __stdcall GetDIBits(void*, void*, uint, uint, void*, void*, uint)')
 
 const SRCCOPY = 0x00cc0020
+
+function hit(ax, ay, aw, ah, bx, by, bw, bh) {
+  return ax < bx + bw && ay < by + bh && ax + aw > bx && ay + ah > by
+}
 
 function capturePhysical(x, y, w, h) {
   if (w < 1 || h < 1) {
@@ -43,16 +47,19 @@ function capturePhysical(x, y, w, h) {
     const pixels = Buffer.alloc(w * h * 4)
     const n = GetDIBits(mem, bmp, 0, h, pixels, bmi, 0)
     if (!n) error(`GetDIBits returned ${n} for ${w}x${h}`)
-    for (let i = 3; i < pixels.length; i += 4) pixels[i] = 255
+    for (let i = 0; i < pixels.length; i += 4) {
+      const b = pixels[i]
+      pixels[i] = pixels[i + 2]
+      pixels[i + 2] = b
+      pixels[i + 3] = 255
+    }
 
     SelectObject(mem, old)
     DeleteObject(bmp)
     DeleteDC(mem)
     ReleaseDC(null, hdc)
 
-    const png = nativeImage.createFromBitmap(pixels, { width: w, height: h }).toPNG()
-    if (!png?.length) error(`toPNG empty ${w}x${h}`)
-    return png
+    return { pixels: new Uint8Array(pixels), w, h }
   } catch (e) {
     error(`capturePhysical ${x},${y} ${w}x${h}`, e)
     return null
@@ -80,16 +87,62 @@ export function virtualDip() {
   return { x, y, width: r - x, height: b - y }
 }
 
-export function captureDesktop() {
+export function cursorDisplay() {
+  const p = screen.getCursorScreenPoint()
+  return (
+    screen.getAllDisplays().find((d) => {
+      const b = d.bounds
+      return p.x >= b.x && p.y >= b.y && p.x < b.x + b.width && p.y < b.y + b.height
+    }) || screen.getPrimaryDisplay()
+  )
+}
+
+export function dipOnVirt(bounds, virt) {
+  return { x: bounds.x - virt.x, y: bounds.y - virt.y, w: bounds.width, h: bounds.height }
+}
+
+export function overlayBounds(virt, shots) {
+  let x = Infinity
+  let y = Infinity
+  let r = -Infinity
+  let b = -Infinity
+  for (const s of shots) {
+    x = Math.min(x, virt.x + s.x)
+    y = Math.min(y, virt.y + s.y)
+    r = Math.max(r, virt.x + s.x + s.w)
+    b = Math.max(b, virt.y + s.y + s.h)
+  }
+  if (!Number.isFinite(x)) return virt
+  return { x, y, width: r - x, height: b - y }
+}
+
+export function toOverlay(virt, ov, shots, selection) {
+  const dx = ov.x - virt.x
+  const dy = ov.y - virt.y
+  if (!dx && !dy) return { virt: ov, shots, selection }
+  return {
+    virt: ov,
+    shots: shots.map((s) => ({ ...s, x: s.x - dx, y: s.y - dy })),
+    selection: selection ? { ...selection, x: selection.x - dx, y: selection.y - dy } : null
+  }
+}
+
+export function captureDesktop(clip) {
   try {
     const virt = virtualDip()
-    const displays = screen.getAllDisplays()
+    let displays = screen.getAllDisplays()
     if (!displays.length) error('no displays')
+    if (clip) {
+      displays = displays.filter((d) =>
+        hit(d.bounds.x - virt.x, d.bounds.y - virt.y, d.bounds.width, d.bounds.height, clip.x, clip.y, clip.w, clip.h)
+      )
+      if (!displays.length) displays = screen.getAllDisplays()
+    }
     const shots = displays
       .map((d) => {
         const p = dipToPhys(d.bounds)
-        const png = capturePhysical(p.x, p.y, p.width, p.height)
-        if (!png) {
+        const raw = capturePhysical(p.x, p.y, p.width, p.height)
+        if (!raw) {
           error(`shot failed display ${d.id} ${JSON.stringify(d.bounds)} phys ${JSON.stringify(p)}`)
           return null
         }
@@ -98,8 +151,10 @@ export function captureDesktop() {
           y: d.bounds.y - virt.y,
           w: d.bounds.width,
           h: d.bounds.height,
+          pw: raw.w,
+          ph: raw.h,
           scale: d.scaleFactor,
-          b64: png.toString('base64')
+          pixels: raw.pixels
         }
       })
       .filter(Boolean)
