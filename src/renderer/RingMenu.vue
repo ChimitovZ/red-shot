@@ -152,6 +152,29 @@ const peekTool = computed(() => (hit.value?.kind === 'tool' ? TOOLS[hit.value.i]
 const dimColor = computed(() => !TOOL_COLOR.has(peekTool.value))
 const dimWidth = computed(() => !TOOL_WIDTH.has(peekTool.value))
 
+function paintOrder(n, cur, on) {
+  const rest = []
+  for (let i = 0; i < n; i++) if (i !== cur && i !== on) rest.push(i)
+  if (cur >= 0 && cur !== on) rest.push(cur)
+  if (on >= 0) rest.push(on)
+  return rest
+}
+
+const toolOrder = computed(() =>
+  paintOrder(
+    TOOLS.length,
+    TOOLS.findIndex((t) => t[0] === props.tool),
+    hit.value?.kind === 'tool' ? hit.value.i : -1
+  )
+)
+const thickOrder = computed(() =>
+  paintOrder(
+    WIDTHS.length,
+    WIDTHS.indexOf(props.width),
+    hit.value?.kind === 'width' ? hit.value.i : -1
+  )
+)
+
 const label = computed(() => {
   const h = hit.value
   if (!h) return TOOLS.find((t) => t[0] === props.tool)?.[1] || ''
@@ -204,14 +227,13 @@ defineExpose({ hitAt, R, warm })
         </filter>
       </defs>
       <g :transform="`translate(${R},${R})`">
-        <circle :r="tOut + 3" class="halo" />
         <circle :r="tOut" class="plate" />
         <circle :r="tIn - 1" class="gap" />
         <circle :r="cIn - 1" class="gap" />
         <path
-          v-for="(p, i) in toolPolys"
+          v-for="i in toolOrder"
           :key="'t' + i"
-          :d="p.d"
+          :d="toolPolys[i].d"
           class="sec"
           :class="{ on: hit?.kind === 'tool' && hit.i === i, cur: tool === TOOLS[i][0], flash: flash === TOOLS[i][0] }"
         />
@@ -227,9 +249,9 @@ defineExpose({ hitAt, R, warm })
         </g>
         <g :class="{ mute: dimWidth, live: dimWidth && hit?.kind === 'width' }">
           <path
-            v-for="(p, i) in thickPolys"
+            v-for="i in thickOrder"
             :key="'w' + i"
-            :d="p.d"
+            :d="thickPolys[i].d"
             class="sec"
             :class="{ on: hit?.kind === 'width' && hit.i === i, cur: width === WIDTHS[i] }"
           />
@@ -246,7 +268,6 @@ defineExpose({ hitAt, R, warm })
         <line v-if="aim" class="aim" :x1="aim.x1" :y1="aim.y1" :x2="aim.x2" :y2="aim.y2" />
         <circle v-if="aim" class="aimdot" :cx="aim.x2" :cy="aim.y2" r="3.5" />
         <circle :r="wIn - 1" class="hub" />
-        <circle :r="wIn - 10" class="hub-ring" />
       </g>
     </svg>
     <div
@@ -309,11 +330,6 @@ defineExpose({ hitAt, R, warm })
   display: block;
   filter: drop-shadow(0 12px 28px rgba(8, 10, 28, 0.55));
 }
-.halo {
-  fill: none;
-  stroke: rgba(255, 45, 120, 0.32);
-  stroke-width: 2;
-}
 .plate {
   fill: url(#rs-plate);
   stroke: var(--line);
@@ -328,19 +344,19 @@ defineExpose({ hitAt, R, warm })
   fill: #1c2044;
   stroke: #101228;
   stroke-width: 1.25;
+  stroke-linejoin: round;
   transition: fill 80ms ease;
 }
 .sec.cur {
   fill: #3a1840;
-  stroke: url(#rs-hot);
-  stroke-width: 1.75;
-  filter: url(#rs-glow);
+  stroke: #ff2d78;
+  stroke-width: 2;
 }
 .sec.on,
 .sec.flash {
   fill: url(#rs-hot);
-  stroke: #ff8fbf;
-  filter: url(#rs-glow);
+  stroke: #ff2d78;
+  stroke-width: 2;
 }
 .mute {
   opacity: 0.32;
@@ -376,15 +392,6 @@ defineExpose({ hitAt, R, warm })
   fill: url(#rs-hub);
   stroke: #3a4074;
   stroke-width: 1.25;
-}
-.hub-ring {
-  fill: none;
-  stroke: #ff2d78;
-  stroke-width: 3;
-  stroke-linecap: round;
-  stroke-dasharray: 48 140;
-  stroke-dashoffset: 18;
-  opacity: 0.95;
 }
 .aim {
   stroke: #ff2d78;
