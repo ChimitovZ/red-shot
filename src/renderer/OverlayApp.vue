@@ -90,6 +90,7 @@ function blank(id) {
   ring.show = false
   aim.on = false
   drawReady.value = false
+  Object.assign(sel, { x: 0, y: 0, w: 0, h: 0, on: false })
   base = null
   overlayC = null
   const c = view.value
@@ -98,7 +99,7 @@ function blank(id) {
     ctx.fillStyle = '#000'
     ctx.fillRect(0, 0, c.width, c.height)
   }
-  window.redshot.blanked(id)
+  nextTick(() => window.redshot.blanked(id))
 }
 
 function makeBase() {

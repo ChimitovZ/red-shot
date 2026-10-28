@@ -232,6 +232,7 @@ async function startCapture(mode) {
     await overlayReady()
     await waitBlank()
     placeOverlay(packed.virt)
+    overlay.setOpacity(1)
     overlay.show()
     overlay.focus()
     overlay.webContents.send('start', { ...packed, mode })
