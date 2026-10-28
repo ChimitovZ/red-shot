@@ -6,7 +6,11 @@ import { arrowFromBox, blit, COLORS, cursorName, measureTextW, replay, showPrevi
 import { logErr } from './log'
 
 const SNAP = 28
+const MAG = 8
+const MAG_SRC = 15
+const MAG_PX = MAG * MAG_SRC
 let lastFont = 18
+let nudged = false
 
 let shots = []
 const sel = reactive({ x: 0, y: 0, w: 0, h: 0, on: false })
@@ -24,8 +28,10 @@ const tOff = { x: 0, y: 0 }
 const vw = ref(1)
 const vh = ref(1)
 const view = ref(null)
+const loupeEl = ref(null)
 const ringRef = ref(null)
-const hint = ref('Выделите область')
+const hint = ref('Выделите область · стрелки — точно')
+const aim = reactive({ x: 0, y: 0, on: false })
 
 let base = null
 let overlayC = null
@@ -81,6 +87,8 @@ function blank(id) {
   texting.edit = -1
   texting.drag = ''
   ring.show = false
+  aim.on = false
+  nudged = false
   base = null
   overlayC = null
   const c = view.value
@@ -110,6 +118,7 @@ function makeBase() {
     })
     if (view.value) sizeLayer(view.value, vw.value, vh.value)
     paint()
+    paintLoupe()
   } catch (e) {
     logErr('makeBase', e)
   }
@@ -126,6 +135,8 @@ function applyStart(data) {
     drag.on = false
     texting.drag = ''
     ring.show = false
+    aim.on = false
+    nudged = false
     vw.value = data.virt.width
     vh.value = data.virt.height
     shots = data.shots || []
@@ -134,13 +145,82 @@ function applyStart(data) {
       hint.value = 'ПКМ — меню · Ctrl+Z — отмена · Enter — копировать · Esc — выход'
     } else {
       Object.assign(sel, { x: 0, y: 0, w: 0, h: 0, on: false })
-      hint.value = 'Выделите область'
+      hint.value = 'Выделите область · стрелки — точно'
     }
     nextTick(makeBase)
   } catch (e) {
     logErr('applyStart', e)
   }
 }
+
+function clampAim() {
+  aim.x = Math.max(0, Math.min(vw.value - 1, Math.round(aim.x)))
+  aim.y = Math.max(0, Math.min(vh.value - 1, Math.round(aim.y)))
+}
+
+function setAim(x, y) {
+  aim.x = x
+  aim.y = y
+  aim.on = true
+  clampAim()
+}
+
+function boxFrom(ax, ay, bx, by) {
+  Object.assign(sel, {
+    x: Math.min(ax, bx),
+    y: Math.min(ay, by),
+    w: Math.abs(bx - ax),
+    h: Math.abs(by - ay)
+  })
+}
+
+function paintLoupe() {
+  if (sel.on || !aim.on) return
+  const c = loupeEl.value
+  if (!c || !base) {
+    if (!c) nextTick(paintLoupe)
+    return
+  }
+  if (c.width !== MAG_PX) {
+    c.width = MAG_PX
+    c.height = MAG_PX
+  }
+  const ctx = c.getContext('2d')
+  ctx.imageSmoothingEnabled = false
+  const half = (MAG_SRC - 1) / 2
+  ctx.fillStyle = '#000'
+  ctx.fillRect(0, 0, MAG_PX, MAG_PX)
+  ctx.drawImage(base, aim.x - half, aim.y - half, MAG_SRC, MAG_SRC, 0, 0, MAG_PX, MAG_PX)
+  ctx.strokeStyle = 'rgba(255,255,255,.14)'
+  ctx.lineWidth = 1
+  for (let i = 1; i < MAG_SRC; i++) {
+    const p = i * MAG + 0.5
+    ctx.beginPath()
+    ctx.moveTo(p, 0)
+    ctx.lineTo(p, MAG_PX)
+    ctx.moveTo(0, p)
+    ctx.lineTo(MAG_PX, p)
+    ctx.stroke()
+  }
+  ctx.strokeStyle = '#ff2d78'
+  ctx.strokeRect(half * MAG + 0.5, half * MAG + 0.5, MAG - 1, MAG - 1)
+}
+
+const loupePos = computed(() => {
+  const gap = 16
+  let x = aim.x + gap
+  let y = aim.y + gap
+  if (x + MAG_PX + 8 > vw.value) x = aim.x - gap - MAG_PX
+  if (y + MAG_PX + 22 > vh.value) y = aim.y - gap - MAG_PX
+  if (x < 8) x = 8
+  if (y < 8) y = 8
+  return { x, y }
+})
+
+const aimLabel = computed(() => {
+  const p = `${aim.x}, ${aim.y}`
+  return drag.on ? `${p} · ${sel.w}×${sel.h}` : p
+})
 
 function inSel(x, y) {
   return sel.on && x >= sel.x && y >= sel.y && x <= sel.x + sel.w && y <= sel.y + sel.h
@@ -378,9 +458,10 @@ function onDown(e) {
     return
   }
   if (!sel.on) {
+    setAim(aim.on ? aim.x : e.clientX, aim.on ? aim.y : e.clientY)
     drag.on = true
-    drag.x = e.clientX
-    drag.y = e.clientY
+    drag.x = aim.x
+    drag.y = aim.y
     Object.assign(sel, { x: drag.x, y: drag.y, w: 0, h: 0 })
     return
   }
@@ -402,11 +483,12 @@ function onMove(e) {
     ringLmb = down
     return
   }
-  if (drag.on) {
-    sel.x = Math.min(drag.x, e.clientX)
-    sel.y = Math.min(drag.y, e.clientY)
-    sel.w = Math.abs(e.clientX - drag.x)
-    sel.h = Math.abs(e.clientY - drag.y)
+  if (!sel.on) {
+    if (nudged) {
+      if (e.movementX || e.movementY) setAim(aim.x + e.movementX, aim.y + e.movementY)
+    } else setAim(e.clientX, e.clientY)
+    if (drag.on) boxFrom(drag.x, drag.y, aim.x, aim.y)
+    paintLoupe()
     return
   }
   if (texting.drag === 'text') {
@@ -533,6 +615,20 @@ function onKey(e) {
     }
     return
   }
+  if (!sel.on && e.key.startsWith('Arrow')) {
+    e.preventDefault()
+    const step = e.shiftKey ? 10 : 1
+    if (!aim.on) return
+    if (e.key === 'ArrowLeft') aim.x -= step
+    if (e.key === 'ArrowRight') aim.x += step
+    if (e.key === 'ArrowUp') aim.y -= step
+    if (e.key === 'ArrowDown') aim.y += step
+    nudged = true
+    clampAim()
+    if (drag.on) boxFrom(drag.x, drag.y, aim.x, aim.y)
+    paintLoupe()
+    return
+  }
   if (e.key === 'Escape') {
     window.redshot.close()
     return
@@ -584,7 +680,7 @@ const dimRects = computed(() => {
 <template>
   <div
     class="root"
-    :style="{ cursor: sel.on ? cursorName(tool) : 'crosshair' }"
+    :style="{ cursor: sel.on ? cursorName(tool) : 'none' }"
     @pointerdown="onDown"
     @pointermove="onMove"
     @pointerup="onUp"
@@ -597,6 +693,17 @@ const dimRects = computed(() => {
       class="frame"
       :style="{ left: sel.x + 'px', top: sel.y + 'px', width: sel.w + 'px', height: sel.h + 'px' }"
     />
+    <template v-if="!sel.on && aim.on">
+      <div class="rule-h" :style="{ top: aim.y + 'px' }" />
+      <div class="rule-v" :style="{ left: aim.x + 'px' }" />
+      <div class="aim-dot" :style="{ left: aim.x + 'px', top: aim.y + 'px' }" />
+      <canvas
+        ref="loupeEl"
+        class="loupe"
+        :style="{ left: loupePos.x + 'px', top: loupePos.y + 'px', width: MAG_PX + 'px', height: MAG_PX + 'px' }"
+      />
+      <div class="aim-xy" :style="{ left: loupePos.x + 'px', top: loupePos.y + MAG_PX + 4 + 'px' }">{{ aimLabel }}</div>
+    </template>
     <template v-if="texting.on">
       <svg v-if="tFrom" class="tarr">
         <line :x1="tFrom.x" :y1="tFrom.y" :x2="tDot.x" :y2="tDot.y" :stroke="color" stroke-width="2" stroke-linecap="round" />
@@ -686,6 +793,55 @@ const dimRects = computed(() => {
   position: absolute;
   border: 1px solid var(--accent);
   pointer-events: none;
+}
+.rule-h,
+.rule-v {
+  position: absolute;
+  z-index: 6;
+  pointer-events: none;
+}
+.rule-h {
+  left: 0;
+  width: 100%;
+  height: 1px;
+  background: repeating-linear-gradient(90deg, var(--accent) 0 5px, transparent 5px 10px);
+}
+.rule-v {
+  top: 0;
+  height: 100%;
+  width: 1px;
+  background: repeating-linear-gradient(180deg, var(--accent) 0 5px, transparent 5px 10px);
+}
+.aim-dot {
+  position: absolute;
+  z-index: 7;
+  width: 5px;
+  height: 5px;
+  margin: -2px 0 0 -2px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 1px #0c0e20;
+  pointer-events: none;
+}
+.loupe {
+  position: absolute;
+  z-index: 8;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  box-shadow: 0 6px 18px #0008;
+  pointer-events: none;
+  image-rendering: pixelated;
+}
+.aim-xy {
+  position: absolute;
+  z-index: 8;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--fg);
+  font-size: 11px;
+  pointer-events: none;
+  white-space: nowrap;
 }
 .tarr {
   position: absolute;
