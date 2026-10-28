@@ -15,7 +15,7 @@ import {
   Type,
   X
 } from '@lucide/vue'
-import { ACTIONS, TOOLS, COLORS, WIDTHS } from './draw'
+import { ACTIONS, TOOLS, COLORS, TOOL_COLOR, TOOL_WIDTH, WIDTHS } from './draw'
 
 const ICONS = {
   pencil: Pencil,
@@ -148,6 +148,10 @@ function hitAt(dx, dy) {
 
 const hit = computed(() => hitAt(props.hx - props.x, props.hy - props.y))
 
+const peekTool = computed(() => (hit.value?.kind === 'tool' ? TOOLS[hit.value.i][0] : props.tool))
+const dimColor = computed(() => !TOOL_COLOR.has(peekTool.value))
+const dimWidth = computed(() => !TOOL_WIDTH.has(peekTool.value))
+
 const label = computed(() => {
   const h = hit.value
   if (!h) return TOOLS.find((t) => t[0] === props.tool)?.[1] || ''
@@ -211,30 +215,34 @@ defineExpose({ hitAt, R, warm })
           class="sec"
           :class="{ on: hit?.kind === 'tool' && hit.i === i, cur: tool === TOOLS[i][0], flash: flash === TOOLS[i][0] }"
         />
-        <path
-          v-for="(p, i) in colorPolys"
-          :key="'c' + i"
-          :d="p.d"
-          class="swatch"
-          :class="{ on: hit?.kind === 'color' && hit.i === i, cur: color === COLORS[i] }"
-          :style="{ fill: COLORS[i] }"
-        />
-        <path
-          v-for="(p, i) in thickPolys"
-          :key="'w' + i"
-          :d="p.d"
-          class="sec"
-          :class="{ on: hit?.kind === 'width' && hit.i === i, cur: width === WIDTHS[i] }"
-        />
-        <circle
-          v-for="(p, i) in thickPolys"
-          :key="'wd' + i"
-          :cx="p.ix"
-          :cy="p.iy"
-          :r="1.8 + WIDTHS[i] * 0.42"
-          class="wdot"
-          :class="{ on: hit?.kind === 'width' && hit.i === i, cur: width === WIDTHS[i] }"
-        />
+        <g :class="{ mute: dimColor, live: dimColor && hit?.kind === 'color' }">
+          <path
+            v-for="(p, i) in colorPolys"
+            :key="'c' + i"
+            :d="p.d"
+            class="swatch"
+            :class="{ on: hit?.kind === 'color' && hit.i === i, cur: color === COLORS[i] }"
+            :style="{ fill: COLORS[i] }"
+          />
+        </g>
+        <g :class="{ mute: dimWidth, live: dimWidth && hit?.kind === 'width' }">
+          <path
+            v-for="(p, i) in thickPolys"
+            :key="'w' + i"
+            :d="p.d"
+            class="sec"
+            :class="{ on: hit?.kind === 'width' && hit.i === i, cur: width === WIDTHS[i] }"
+          />
+          <circle
+            v-for="(p, i) in thickPolys"
+            :key="'wd' + i"
+            :cx="p.ix"
+            :cy="p.iy"
+            :r="1.8 + WIDTHS[i] * 0.42"
+            class="wdot"
+            :class="{ on: hit?.kind === 'width' && hit.i === i, cur: width === WIDTHS[i] }"
+          />
+        </g>
         <line v-if="aim" class="aim" :x1="aim.x1" :y1="aim.y1" :x2="aim.x2" :y2="aim.y2" />
         <circle v-if="aim" class="aimdot" :cx="aim.x2" :cy="aim.y2" r="3.5" />
         <circle :r="wIn - 1" class="hub" />
@@ -333,6 +341,13 @@ defineExpose({ hitAt, R, warm })
   fill: url(#rs-hot);
   stroke: #ff8fbf;
   filter: url(#rs-glow);
+}
+.mute {
+  opacity: 0.32;
+  transition: opacity 80ms ease;
+}
+.mute.live {
+  opacity: 0.62;
 }
 .swatch {
   stroke: rgba(255, 255, 255, 0.28);

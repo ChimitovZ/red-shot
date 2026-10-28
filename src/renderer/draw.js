@@ -19,6 +19,8 @@ export const ACTIONS = [
 
 export const COLORS = ['#ff2d78', '#d0d0d0', '#111111', '#f0c040', '#3d8bff', '#3cb371', '#ff7a1a', '#9b59b6']
 export const WIDTHS = [2, 4, 8, 14]
+export const TOOL_COLOR = new Set(['pencil', 'marker', 'arrow', 'line', 'rect', 'ellipse', 'text'])
+export const TOOL_WIDTH = new Set(['pencil', 'marker', 'arrow', 'line', 'rect', 'ellipse', 'eraser'])
 
 export function normRect(a, b) {
   const x = Math.min(a.x, b.x)
