@@ -832,16 +832,16 @@ const dimRects = computed(() => {
       :width="width"
       :flash="ring.flash"
     />
-    <div v-if="sel.on || drawReady" class="hint">
+    <div v-if="(sel.on || drawReady) && !ring.show" class="hint">
       <button type="button" class="hb" title="Ctrl+Z" @pointerdown.stop @click="undoLast">
-        <Undo2 :size="14" :stroke-width="2" />
+        <Undo2 :size="13" :stroke-width="2.2" />
       </button>
       <button type="button" class="hb" title="Ctrl+Y" @pointerdown.stop @click="redoLast">
-        <Redo2 :size="14" :stroke-width="2" />
+        <Redo2 :size="13" :stroke-width="2.2" />
       </button>
       <span>{{ hint }}</span>
     </div>
-    <div v-else class="hint">{{ hint }}</div>
+    <div v-else-if="!ring.show" class="hint">{{ hint }}</div>
   </div>
 </template>
 
@@ -870,6 +870,7 @@ body {
 .frame {
   position: absolute;
   border: 1px solid var(--accent);
+  box-shadow: 0 0 0 1px rgba(12, 14, 32, 0.45);
   pointer-events: none;
 }
 .rule-h,
@@ -877,18 +878,19 @@ body {
   position: absolute;
   z-index: 6;
   pointer-events: none;
+  opacity: 0.55;
 }
 .rule-h {
   left: 0;
   width: 100%;
   height: 1px;
-  background: repeating-linear-gradient(90deg, var(--accent) 0 5px, transparent 5px 10px);
+  background: repeating-linear-gradient(90deg, var(--accent) 0 4px, transparent 4px 10px);
 }
 .rule-v {
   top: 0;
   height: 100%;
   width: 1px;
-  background: repeating-linear-gradient(180deg, var(--accent) 0 5px, transparent 5px 10px);
+  background: repeating-linear-gradient(180deg, var(--accent) 0 4px, transparent 4px 10px);
 }
 .aim-dot {
   position: absolute;
@@ -906,18 +908,23 @@ body {
   z-index: 8;
   border-radius: 50%;
   border: 2px solid var(--accent);
-  box-shadow: 0 6px 18px #0008;
+  box-shadow:
+    0 8px 22px #0008,
+    inset 0 0 0 1px rgba(255, 255, 255, 0.18);
   pointer-events: none;
   image-rendering: pixelated;
 }
 .aim-xy {
   position: absolute;
   z-index: 8;
-  padding: 1px 5px;
-  border-radius: 4px;
-  background: var(--panel);
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: rgba(30, 33, 64, 0.92);
+  border: 1px solid var(--line);
   color: var(--fg);
   font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
   pointer-events: none;
   white-space: nowrap;
 }
@@ -959,28 +966,37 @@ body {
 .tdot {
   position: absolute;
   z-index: 13;
-  width: 10px;
-  height: 10px;
-  margin: -5px 0 0 -5px;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
   padding: 0;
   border: 2px solid #f2f2f2;
   border-radius: 50%;
   background: var(--accent);
+  box-shadow: 0 0 0 1px #0c0e20;
   cursor: grab;
+}
+.tdot:focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 1px;
 }
 .tbar {
   position: absolute;
   z-index: 14;
   display: flex;
   align-items: center;
-  gap: 4px;
-  background: var(--panel);
-  padding: 3px 4px;
+  gap: 3px;
+  background: rgba(30, 33, 64, 0.94);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  padding: 3px;
 }
 .tfs {
-  width: 38px;
-  height: 20px;
+  width: 36px;
+  height: 22px;
   border: 0;
+  border-radius: 5px;
   background: var(--bg);
   color: var(--fg);
   font-size: 12px;
@@ -988,21 +1004,37 @@ body {
   outline: none;
   appearance: textfield;
 }
+.tfs:focus-visible {
+  box-shadow: 0 0 0 1px var(--accent);
+}
 .tfs::-webkit-inner-spin-button,
 .tfs::-webkit-outer-spin-button {
   appearance: none;
 }
 .tb {
   display: flex;
-  padding: 2px;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
   border: 0;
+  border-radius: 5px;
   background: none;
   color: var(--fg);
   cursor: pointer;
 }
-.tb.on,
-.tb:hover {
+.tb:hover,
+.tb:focus-visible {
   color: var(--accent);
+  background: rgba(255, 45, 120, 0.12);
+}
+.tb.on {
+  color: #fff;
+  background: var(--accent);
+}
+.tb:focus-visible {
+  outline: none;
 }
 .tfill {
   width: 11px;
@@ -1013,28 +1045,53 @@ body {
 .hint {
   position: fixed;
   left: 50%;
-  bottom: 12px;
+  bottom: 10px;
   transform: translateX(-50%);
   z-index: 15;
   display: flex;
   align-items: center;
-  gap: 6px;
-  background: var(--panel);
+  gap: 5px;
+  max-width: min(92vw, 640px);
+  background: rgba(30, 33, 64, 0.9);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
   color: var(--fg);
-  font-size: 12px;
-  padding: 4px 8px;
+  font-size: 11px;
+  letter-spacing: 0.01em;
+  padding: 3px 8px 3px 3px;
   pointer-events: none;
+}
+.hint:not(:has(.hb)) {
+  padding: 5px 10px;
+}
+.hint span {
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .hb {
   display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
   padding: 0;
   border: 0;
+  border-radius: 5px;
   background: none;
   color: var(--fg);
   cursor: pointer;
   pointer-events: auto;
+  flex-shrink: 0;
 }
-.hb:hover {
+.hb:hover,
+.hb:focus-visible {
   color: var(--accent);
+  background: rgba(255, 45, 120, 0.14);
+}
+.hb:focus-visible {
+  outline: 1px solid var(--accent);
 }
 </style>

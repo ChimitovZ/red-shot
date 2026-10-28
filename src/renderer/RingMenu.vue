@@ -233,6 +233,7 @@ defineExpose({ hitAt, R, warm })
           :cy="p.iy"
           :r="1.8 + WIDTHS[i] * 0.42"
           class="wdot"
+          :class="{ on: hit?.kind === 'width' && hit.i === i, cur: width === WIDTHS[i] }"
         />
         <line v-if="aim" class="aim" :x1="aim.x1" :y1="aim.y1" :x2="aim.x2" :y2="aim.y2" />
         <circle v-if="aim" class="aimdot" :cx="aim.x2" :cy="aim.y2" r="3.5" />
@@ -302,12 +303,12 @@ defineExpose({ hitAt, R, warm })
 }
 .halo {
   fill: none;
-  stroke: rgba(255, 45, 120, 0.28);
+  stroke: rgba(255, 45, 120, 0.32);
   stroke-width: 2;
 }
 .plate {
   fill: url(#rs-plate);
-  stroke: #3a4074;
+  stroke: var(--line);
   stroke-width: 1.25;
 }
 .gap {
@@ -319,7 +320,7 @@ defineExpose({ hitAt, R, warm })
   fill: #1c2044;
   stroke: #101228;
   stroke-width: 1.25;
-  transition: fill 100ms ease;
+  transition: fill 80ms ease;
 }
 .sec.cur {
   fill: #3a1840;
@@ -334,21 +335,27 @@ defineExpose({ hitAt, R, warm })
   filter: url(#rs-glow);
 }
 .swatch {
-  stroke: rgba(255, 255, 255, 0.22);
+  stroke: rgba(255, 255, 255, 0.28);
   stroke-width: 1.25;
   transition:
-    stroke-width 100ms ease,
-    stroke 100ms ease;
+    stroke-width 80ms ease,
+    stroke 80ms ease;
 }
 .swatch.cur,
 .swatch.on {
-  stroke: #ff2d78;
-  stroke-width: 3;
+  stroke: #fff;
+  stroke-width: 2.5;
   filter: url(#rs-glow);
 }
 .wdot {
-  fill: #ececf6;
+  fill: #c8cce0;
+  opacity: 0.55;
   pointer-events: none;
+}
+.wdot.cur,
+.wdot.on {
+  fill: #fff;
+  opacity: 1;
 }
 .hub {
   fill: url(#rs-hub);
@@ -380,17 +387,17 @@ defineExpose({ hitAt, R, warm })
 .ico {
   position: absolute;
   display: flex;
-  color: #a8add0;
+  color: #b4b9dc;
   transform: translate(-50%, -50%);
-  filter: drop-shadow(0 1px 1px rgba(8, 10, 28, 0.5));
+  filter: drop-shadow(0 1px 1px rgba(8, 10, 28, 0.55));
   transition:
-    transform 100ms ease,
-    color 100ms ease;
+    transform 80ms ease,
+    color 80ms ease;
 }
 .ico.on,
 .ico.cur {
   color: #fff;
-  transform: translate(-50%, -50%) scale(1.14);
+  transform: translate(-50%, -50%) scale(1.12);
 }
 .cap {
   position: absolute;
@@ -398,17 +405,19 @@ defineExpose({ hitAt, R, warm })
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 88px;
-  height: 88px;
+  width: 84px;
+  height: 84px;
   margin: auto;
+  padding: 0 6px;
   text-align: center;
-  color: #c8cce0;
-  font: 600 11px/1.2 'Segoe UI', sans-serif;
-  letter-spacing: 0.04em;
-  transition: color 100ms ease;
+  color: var(--fg);
+  font: 600 12px/1.15 'Segoe UI', sans-serif;
+  letter-spacing: 0.02em;
+  text-shadow: 0 1px 8px rgba(8, 10, 28, 0.7);
+  transition: color 80ms ease;
 }
 .cap.acc {
-  color: #ff5a9a;
+  color: var(--accent-2);
 }
 .bar {
   position: absolute;
@@ -417,34 +426,35 @@ defineExpose({ hitAt, R, warm })
   display: flex;
   overflow: hidden;
   margin-top: 10px;
-  border-radius: 12px;
-  background: #1c1f40;
-  border: 1px solid #3a4074;
-  box-shadow: 0 10px 24px rgba(8, 10, 28, 0.45);
+  border-radius: 10px;
+  background: rgba(28, 31, 64, 0.96);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
   transform: translateX(-50%);
 }
 .abtn {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
+  gap: 6px;
   box-sizing: border-box;
   width: 124px;
   height: 40px;
   border: none;
-  border-right: 1px solid #3a4074;
-  color: #c8cce0;
-  font: 600 13px/1 'Segoe UI', sans-serif;
+  border-right: 1px solid var(--line);
+  color: var(--fg);
+  font: 600 12px/1 'Segoe UI', sans-serif;
+  letter-spacing: 0.01em;
   transition:
-    background 100ms ease,
-    color 100ms ease;
+    background 80ms ease,
+    color 80ms ease;
 }
 .abtn:last-child {
   border-right: none;
 }
 .abtn.on,
 .abtn.flash {
-  background: #ff2d78;
+  background: var(--accent);
   color: #fff;
 }
 </style>

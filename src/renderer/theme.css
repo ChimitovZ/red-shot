@@ -1,10 +1,17 @@
 :root {
   --bg: #16182e;
   --panel: #1e2140;
+  --panel-2: #252a4e;
   --fg: #c8cce0;
+  --muted: #8b90b0;
   --accent: #ff2d78;
+  --accent-2: #ff5a9a;
+  --line: #3a4074;
   --dim: rgba(12, 14, 32, 0.55);
-  font-family: 'Segoe UI', sans-serif;
+  --shadow: 0 8px 22px rgba(8, 10, 28, 0.48);
+  --radius: 8px;
+  color-scheme: dark;
+  font-family: 'Segoe UI', system-ui, sans-serif;
 }
 
 * {
@@ -16,8 +23,13 @@ html,
 body {
   margin: 0;
   overflow: hidden;
-  background: #16182e;
+  background: var(--bg);
   color: var(--fg);
   width: 100%;
   height: 100%;
+}
+
+button,
+input {
+  font-family: inherit;
 }
