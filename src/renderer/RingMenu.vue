@@ -2,13 +2,10 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import {
   ArrowUpRight,
-  Circle,
   Copy,
   Crop,
-  Eraser,
   Grid3x3,
-  Highlighter,
-  Minus,
+  Hash,
   Pencil,
   Save,
   Square,
@@ -19,14 +16,11 @@ import { ACTIONS, TOOLS, COLORS, TOOL_COLOR, TOOL_WIDTH, WIDTHS } from './draw'
 
 const ICONS = {
   pencil: Pencil,
-  marker: Highlighter,
   arrow: ArrowUpRight,
-  line: Minus,
   rect: Square,
-  ellipse: Circle,
   text: Type,
+  number: Hash,
   blur: Grid3x3,
-  eraser: Eraser,
   crop: Crop,
   save: Save,
   copy: Copy,

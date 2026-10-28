@@ -2,19 +2,23 @@
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { Redo2, Square, Undo2 } from '@lucide/vue'
 import RingMenu from './RingMenu.vue'
-import { ACTIONS, arrowFromBox, blit, COLORS, cursorName, measureTextW, replay, showPreview, strokeLast, textBg, textBox, textHandle, TOOLS, WIDTHS } from './draw'
+import { ACTIONS, arrowFromBox, COLORS, cursorName, measureTextW, replay, showPreview, strokeLast, textBg, textBox, textHandle, TOOLS, WIDTHS } from './draw'
 import { logErr } from './log'
 
 const SNAP = 28
 const MAG = 12
 const MAG_SRC = 17
 const MAG_PX = MAG * MAG_SRC
-const GEO = new Set(['arrow', 'line', 'rect', 'ellipse', 'blur'])
+const GEO = new Set(['arrow', 'rect', 'blur'])
+const HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']
+const EDGE = 7
+const MIN_SEL = 8
 let lastFont = 18
 
 let shots = []
 const sel = reactive({ x: 0, y: 0, w: 0, h: 0, on: false })
 const drag = reactive({ on: false, x: 0, y: 0 })
+const fr = reactive({ op: '', h: '', ax: 0, ay: 0, x: 0, y: 0, w: 0, h0: 0 })
 const tool = ref('pencil')
 const drawReady = ref(false)
 const color = ref(COLORS[0])
@@ -33,6 +37,8 @@ const loupeEl = ref(null)
 const ringRef = ref(null)
 const hint = ref('Выделите область · стрелки — точно')
 const aim = reactive({ x: 0, y: 0, on: false })
+const spaceHeld = ref(false)
+let actx
 
 let base = null
 let overlayC = null
@@ -84,6 +90,7 @@ function blank(id) {
   preview.value = null
   drawing = false
   drag.on = false
+  fr.op = ''
   texting.on = false
   texting.edit = -1
   texting.drag = ''
@@ -134,9 +141,11 @@ function applyStart(data) {
     texting.edit = -1
     drawing = false
     drag.on = false
+    fr.op = ''
     texting.drag = ''
     ring.show = false
     aim.on = false
+    shutter()
     vw.value = data.virt.width
     vh.value = data.virt.height
     shots = data.shots || []
@@ -188,13 +197,153 @@ function setAim(x, y) {
   clampAim()
 }
 
-function boxFrom(ax, ay, bx, by) {
+function shutter() {
+  try {
+    actx = actx || new AudioContext()
+    if (actx.state === 'suspended') actx.resume()
+    const t0 = actx.currentTime
+    const o = actx.createOscillator()
+    const g = actx.createGain()
+    o.type = 'square'
+    o.frequency.setValueAtTime(2200, t0)
+    o.frequency.exponentialRampToValueAtTime(420, t0 + 0.045)
+    g.gain.setValueAtTime(0.1, t0)
+    g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.08)
+    o.connect(g)
+    g.connect(actx.destination)
+    o.start(t0)
+    o.stop(t0 + 0.09)
+  } catch {}
+}
+
+function boxFrom(ax, ay, bx, by, square) {
+  let dx = bx - ax
+  let dy = by - ay
+  if (square) {
+    const s = Math.max(Math.abs(dx), Math.abs(dy))
+    dx = dx < 0 ? -s : s
+    dy = dy < 0 ? -s : s
+  }
+  let x = Math.min(ax, ax + dx)
+  let y = Math.min(ay, ay + dy)
+  let w = Math.abs(dx)
+  let h = Math.abs(dy)
+  if (x < 0) {
+    w += x
+    x = 0
+  }
+  if (y < 0) {
+    h += y
+    y = 0
+  }
   Object.assign(sel, {
-    x: Math.min(ax, bx),
-    y: Math.min(ay, by),
-    w: Math.abs(bx - ax),
-    h: Math.abs(by - ay)
+    x,
+    y,
+    w: Math.max(0, Math.min(w, vw.value - x)),
+    h: Math.max(0, Math.min(h, vh.value - y))
   })
+}
+
+function clampSel() {
+  sel.w = Math.max(MIN_SEL, Math.min(sel.w, vw.value))
+  sel.h = Math.max(MIN_SEL, Math.min(sel.h, vh.value))
+  sel.x = Math.max(0, Math.min(sel.x, vw.value - sel.w))
+  sel.y = Math.max(0, Math.min(sel.y, vh.value - sel.h))
+}
+
+function hitFrame(x, y) {
+  if (!sel.on) return ''
+  const { x: sx, y: sy, w, h } = sel
+  const r = sx + w
+  const b = sy + h
+  if (x < sx - EDGE || x > r + EDGE || y < sy - EDGE || y > b + EDGE) return ''
+  const L = Math.abs(x - sx) <= EDGE
+  const R = Math.abs(x - r) <= EDGE
+  const T = Math.abs(y - sy) <= EDGE
+  const B = Math.abs(y - b) <= EDGE
+  if (T && L) return 'nw'
+  if (T && R) return 'ne'
+  if (B && L) return 'sw'
+  if (B && R) return 'se'
+  if (T) return 'n'
+  if (B) return 's'
+  if (L) return 'w'
+  if (R) return 'e'
+  return ''
+}
+
+function applyPan(x, y) {
+  sel.x = x - fr.ax
+  sel.y = y - fr.ay
+  sel.w = fr.w
+  sel.h = fr.h0
+  clampSel()
+}
+
+function applyResize(px, py, square) {
+  let L = fr.x
+  let T = fr.y
+  let R = fr.x + fr.w
+  let B = fr.y + fr.h0
+  const h = fr.h
+  if (h.includes('w')) L = px
+  if (h.includes('e')) R = px
+  if (h.includes('n')) T = py
+  if (h.includes('s')) B = py
+  if (square) {
+    const s = Math.max(Math.abs(R - L), Math.abs(B - T), MIN_SEL)
+    if (h === 'n' || h === 's') {
+      const cx = fr.x + fr.w / 2
+      L = cx - s / 2
+      R = cx + s / 2
+    } else if (h.includes('e')) R = L + (R >= L ? s : -s)
+    else if (h.includes('w')) L = R - (R >= L ? s : -s)
+    if (h === 'e' || h === 'w') {
+      const cy = fr.y + fr.h0 / 2
+      T = cy - s / 2
+      B = cy + s / 2
+    } else if (h.includes('s')) B = T + (B >= T ? s : -s)
+    else if (h.includes('n')) T = B - (B >= T ? s : -s)
+  }
+  Object.assign(sel, {
+    x: Math.min(L, R),
+    y: Math.min(T, B),
+    w: Math.abs(R - L),
+    h: Math.abs(B - T),
+    on: true
+  })
+  clampSel()
+}
+
+function startResize(handle, x, y) {
+  fr.op = 'resize'
+  fr.h = handle
+  fr.x = sel.x
+  fr.y = sel.y
+  fr.w = sel.w
+  fr.h0 = sel.h
+  setAim(x, y)
+}
+
+function onHandleDown(h, e) {
+  if (e.button !== 0 || ring.show) return
+  try {
+    e.currentTarget.setPointerCapture(e.pointerId)
+  } catch {}
+  if (spaceHeld.value) {
+    setAim(e.clientX, e.clientY)
+    fr.op = 'pan'
+    fr.ax = aim.x - sel.x
+    fr.ay = aim.y - sel.y
+    fr.w = sel.w
+    fr.h0 = sel.h
+    return
+  }
+  startResize(h, e.clientX, e.clientY)
+}
+
+function ortho(a, x, y) {
+  return Math.abs(x - a.x) >= Math.abs(y - a.y) ? { x, y: a.y } : { x: a.x, y }
 }
 
 function paintLoupe() {
@@ -242,7 +391,7 @@ const loupePos = computed(() => {
 })
 
 const showGuides = computed(
-  () => aim.on && !ring.show && !texting.on && (selecting() || geoOn())
+  () => aim.on && !ring.show && !texting.on && (selecting() || geoOn() || fr.op === 'resize')
 )
 watch(showGuides, (v) => {
   if (v) nextTick(paintLoupe)
@@ -253,12 +402,14 @@ const cursorNow = computed(() => {
     const R = ringRef.value?.R || 228
     return Math.hypot(ring.hx - ring.x, ring.hy - ring.y) > R ? 'pointer' : 'none'
   }
+  if (spaceHeld.value && sel.on) return fr.op === 'pan' ? 'grabbing' : 'grab'
+  if (fr.op === 'resize') return 'none'
   return selecting() || (geoOn() && !texting.on) ? 'none' : cursorName(tool.value)
 })
 
 const aimLabel = computed(() => {
   const p = `${aim.x}, ${aim.y}`
-  if (drag.on) return `${p} · ${sel.w}×${sel.h}`
+  if (drag.on || fr.op) return `${p} · ${sel.w}×${sel.h}`
   const pr = preview.value
   if (pr?.a && pr?.b) return `${p} · ${Math.abs(pr.b.x - pr.a.x)}×${Math.abs(pr.b.y - pr.a.y)}`
   return p
@@ -278,8 +429,10 @@ function nudgeAim(e) {
   if (e.key === 'ArrowDown') aim.y += step
   clampAim()
   window.redshot.setCursor(aim.x, aim.y)
-  if (drag.on) boxFrom(drag.x, drag.y, aim.x, aim.y)
-  if (drawing) moveItem(aim.x, aim.y)
+  if (drag.on) boxFrom(drag.x, drag.y, aim.x, aim.y, e.shiftKey)
+  if (fr.op === 'resize') applyResize(aim.x, aim.y, e.shiftKey)
+  if (fr.op === 'pan') applyPan(aim.x, aim.y)
+  if (drawing) moveItem(aim.x, aim.y, e.shiftKey)
   paintLoupe()
   return true
 }
@@ -381,9 +534,21 @@ function downHandle(e) {
   texting.b = { x: e.clientX, y: e.clientY }
 }
 
+function nextNum() {
+  let m = 0
+  for (const it of items) if (it.tool === 'number' && it.n > m) m = it.n
+  return m + 1
+}
+
 function startItem(x, y) {
   const t = tool.value
   if (t === 'crop') return
+  if (t === 'number') {
+    items.push({ tool: 'number', color: color.value, width: width.value, a: { x, y }, n: nextNum() })
+    redo.length = 0
+    paint()
+    return
+  }
   if (t === 'text') {
     Object.assign(texting, {
       on: true,
@@ -400,8 +565,8 @@ function startItem(x, y) {
     return
   }
   drawing = true
-  if (t === 'pencil' || t === 'marker' || t === 'eraser') {
-    preview.value = { tool: t, color: color.value, width: t === 'marker' ? width.value * 2 : width.value, pts: [{ x, y }] }
+  if (t === 'pencil') {
+    preview.value = { tool: t, color: color.value, width: width.value, pts: [{ x, y }] }
     return
   }
   preview.value = { tool: t, color: color.value, width: width.value, a: { x, y }, b: { x, y } }
@@ -409,20 +574,17 @@ function startItem(x, y) {
   if (c && base && overlayC) showPreview(c, base, overlayC, preview.value)
 }
 
-function moveItem(x, y) {
+function moveItem(x, y, shift) {
   const p = preview.value
   if (!p) return
   const c = view.value
   if (p.pts) {
     p.pts.push({ x, y })
     if (!c || !overlayC) return
-    if (p.tool === 'eraser') {
-      strokeLast(overlayC, null, p)
-      blit(c, base, overlayC)
-    } else strokeLast(overlayC, c, p)
+    strokeLast(overlayC, c, p)
     return
   }
-  p.b = { x, y }
+  p.b = shift && p.tool === 'arrow' ? ortho(p.a, x, y) : { x, y }
   if (c && base && overlayC) showPreview(c, base, overlayC, p)
 }
 
@@ -530,6 +692,22 @@ function onDown(e) {
     if (n >= 0) openText(n)
     return
   }
+  if (sel.on && spaceHeld.value) {
+    setAim(aim.on ? aim.x : e.clientX, aim.on ? aim.y : e.clientY)
+    fr.op = 'pan'
+    fr.ax = aim.x - sel.x
+    fr.ay = aim.y - sel.y
+    fr.w = sel.w
+    fr.h0 = sel.h
+    return
+  }
+  {
+    const hf = hitFrame(e.clientX, e.clientY)
+    if (hf) {
+      startResize(hf, e.clientX, e.clientY)
+      return
+    }
+  }
   if (selecting()) {
     setAim(aim.on ? aim.x : e.clientX, aim.on ? aim.y : e.clientY)
     drag.on = true
@@ -559,9 +737,20 @@ function onMove(e) {
     ringLmb = down
     return
   }
+  if (fr.op === 'pan') {
+    trackAim(e)
+    applyPan(aim.x, aim.y)
+    return
+  }
+  if (fr.op === 'resize') {
+    trackAim(e)
+    applyResize(aim.x, aim.y, e.shiftKey)
+    paintLoupe()
+    return
+  }
   if (drag.on) {
     trackAim(e)
-    boxFrom(drag.x, drag.y, aim.x, aim.y)
+    boxFrom(drag.x, drag.y, aim.x, aim.y, e.shiftKey)
     paintLoupe()
     return
   }
@@ -576,17 +765,18 @@ function onMove(e) {
   }
   if (selecting() || geoOn()) {
     trackAim(e)
-    if (drawing) moveItem(aim.x, aim.y)
+    if (drawing) moveItem(aim.x, aim.y, e.shiftKey)
     paintLoupe()
     return
   }
-  if (drawing) moveItem(e.clientX, e.clientY)
+  if (drawing) moveItem(e.clientX, e.clientY, e.shiftKey)
 }
 
 function onUp(e) {
   if (e.type === 'pointercancel') {
     ringLmb = false
     texting.drag = ''
+    fr.op = ''
     if (drag.on) {
       drag.on = false
       if (!(sel.w > 3 && sel.h > 3)) Object.assign(sel, { x: 0, y: 0, w: 0, h: 0, on: false })
@@ -602,6 +792,10 @@ function onUp(e) {
     return
   }
   if (e.button !== 0 || ring.show) return
+  if (fr.op) {
+    fr.op = ''
+    return
+  }
   if (texting.drag) {
     if (texting.drag === 'handle' && texting.b) {
       const d = textHandle(tBox.value)
@@ -665,7 +859,8 @@ async function copyOut() {
   try {
     if (texting.on || !sel.on) return
     const buf = await exportPng()
-    if (buf) await window.redshot.copy(buf)
+    if (!buf) return
+    await window.redshot.copy(buf)
   } catch (e) {
     logErr('copyOut', e)
   }
@@ -681,7 +876,15 @@ async function saveOut() {
   }
 }
 
+function onKeyUp(e) {
+  if (e.code === 'Space') spaceHeld.value = false
+}
+
 function onKey(e) {
+  if (e.code === 'Space' && !texting.on) {
+    spaceHeld.value = true
+    e.preventDefault()
+  }
   if (texting.on) {
     if (e.key === 'Enter') {
       commitText()
@@ -696,7 +899,7 @@ function onKey(e) {
     }
     return
   }
-  if (e.key.startsWith('Arrow') && (selecting() || geoOn()) && nudgeAim(e)) return
+  if (e.key.startsWith('Arrow') && (selecting() || geoOn() || fr.op || drag.on) && nudgeAim(e)) return
   if (e.key === 'Escape') {
     window.redshot.close()
     return
@@ -726,11 +929,13 @@ onMounted(() => {
   window.redshot.onShown(() => ringRef.value?.warm())
   window.redshot.uiReady()
   window.addEventListener('keydown', onKey)
+  window.addEventListener('keyup', onKeyUp)
   window.addEventListener('mousedown', onMouseDown, true)
   window.addEventListener('contextmenu', (e) => e.preventDefault())
 })
 onUnmounted(() => {
   window.removeEventListener('keydown', onKey)
+  window.removeEventListener('keyup', onKeyUp)
   window.removeEventListener('mousedown', onMouseDown, true)
 })
 
@@ -764,7 +969,16 @@ const dimRects = computed(() => {
       v-if="sel.on || drag.on"
       class="frame"
       :style="{ left: sel.x + 'px', top: sel.y + 'px', width: sel.w + 'px', height: sel.h + 'px' }"
-    />
+    >
+      <i
+        v-for="h in HANDLES"
+        v-show="sel.on"
+        :key="h"
+        class="hnd"
+        :class="h"
+        @pointerdown.stop="onHandleDown(h, $event)"
+      />
+    </div>
     <template v-if="showGuides">
       <div class="rule-h" :style="{ top: aim.y + 'px' }" />
       <div class="rule-v" :style="{ left: aim.x + 'px' }" />
@@ -872,6 +1086,55 @@ body {
   border: 1px solid var(--accent);
   box-shadow: 0 0 0 1px rgba(12, 14, 32, 0.45);
   pointer-events: none;
+}
+.hnd {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  background: #fff;
+  border: 1px solid var(--accent);
+  box-sizing: border-box;
+  pointer-events: auto;
+}
+.hnd.nw {
+  left: -3px;
+  top: -3px;
+  cursor: nwse-resize;
+}
+.hnd.ne {
+  right: -3px;
+  top: -3px;
+  cursor: nesw-resize;
+}
+.hnd.sw {
+  left: -3px;
+  bottom: -3px;
+  cursor: nesw-resize;
+}
+.hnd.se {
+  right: -3px;
+  bottom: -3px;
+  cursor: nwse-resize;
+}
+.hnd.n {
+  left: calc(50% - 3px);
+  top: -3px;
+  cursor: ns-resize;
+}
+.hnd.s {
+  left: calc(50% - 3px);
+  bottom: -3px;
+  cursor: ns-resize;
+}
+.hnd.e {
+  right: -3px;
+  top: calc(50% - 3px);
+  cursor: ew-resize;
+}
+.hnd.w {
+  left: -3px;
+  top: calc(50% - 3px);
+  cursor: ew-resize;
 }
 .rule-h,
 .rule-v {

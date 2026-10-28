@@ -17,14 +17,46 @@ const BitBlt = gdi32.func('int __stdcall BitBlt(void*, int, int, int, int, void*
 const DeleteDC = gdi32.func('int __stdcall DeleteDC(void*)')
 const DeleteObject = gdi32.func('int __stdcall DeleteObject(void*)')
 const GetDIBits = gdi32.func('int __stdcall GetDIBits(void*, void*, uint, uint, void*, void*, uint)')
+const GetCursorInfo = user32.func('int __stdcall GetCursorInfo(void*)')
+const GetIconInfo = user32.func('int __stdcall GetIconInfo(void*, void*)')
+const DrawIconEx = user32.func('int __stdcall DrawIconEx(void*, int, int, void*, int, int, uint, void*, uint)')
 
 const SRCCOPY = 0x00cc0020
+const CURSOR_SHOWING = 1
+const DI_NORMAL = 3
+
+function stampCursor(mem, capX, capY) {
+  try {
+    const ci = Buffer.alloc(24)
+    ci.writeUInt32LE(24, 0)
+    if (!GetCursorInfo(ci)) return
+    if (!(ci.readUInt32LE(4) & CURSOR_SHOWING)) return
+    const hCursor = ci.readBigUInt64LE(8)
+    if (!hCursor) return
+    const cx = ci.readInt32LE(16)
+    const cy = ci.readInt32LE(20)
+    const ii = Buffer.alloc(32)
+    let hx = 0
+    let hy = 0
+    if (GetIconInfo(hCursor, ii)) {
+      hx = ii.readUInt32LE(4)
+      hy = ii.readUInt32LE(8)
+      const mask = ii.readBigUInt64LE(16)
+      const color = ii.readBigUInt64LE(24)
+      if (mask) DeleteObject(mask)
+      if (color) DeleteObject(color)
+    }
+    DrawIconEx(mem, cx - hx - capX, cy - hy - capY, hCursor, 0, 0, 0, null, DI_NORMAL)
+  } catch (e) {
+    error('stampCursor', e)
+  }
+}
 
 function hit(ax, ay, aw, ah, bx, by, bw, bh) {
   return ax < bx + bw && ay < by + bh && ax + aw > bx && ay + ah > by
 }
 
-function capturePhysical(x, y, w, h) {
+function capturePhysical(x, y, w, h, withCursor) {
   if (w < 1 || h < 1) {
     error(`capturePhysical bad size ${w}x${h} at ${x},${y}`)
     return null
@@ -37,6 +69,7 @@ function capturePhysical(x, y, w, h) {
     const old = SelectObject(mem, bmp)
     const ok = BitBlt(mem, 0, 0, w, h, hdc, x, y, SRCCOPY)
     if (!ok) error(`BitBlt failed ${x},${y} ${w}x${h}`)
+    if (withCursor) stampCursor(mem, x, y)
 
     const bmi = Buffer.alloc(44)
     bmi.writeUInt32LE(40, 0)
@@ -137,7 +170,7 @@ export function toOverlay(virt, ov, shots, selection) {
   }
 }
 
-export function captureDesktop(clip) {
+export function captureDesktop(clip, withCursor) {
   try {
     const virt = virtualDip()
     let displays = screen.getAllDisplays()
@@ -151,7 +184,7 @@ export function captureDesktop(clip) {
     const shots = displays
       .map((d) => {
         const p = dipToPhys(d.bounds)
-        const raw = capturePhysical(p.x, p.y, p.width, p.height)
+        const raw = capturePhysical(p.x, p.y, p.width, p.height, withCursor)
         if (!raw) {
           error(`shot failed display ${d.id} ${JSON.stringify(d.bounds)} phys ${JSON.stringify(p)}`)
           return null

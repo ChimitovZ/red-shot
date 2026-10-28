@@ -1,13 +1,10 @@
 export const TOOLS = [
   ['pencil', 'Карандаш', 'Кр'],
-  ['marker', 'Маркер', 'Мар'],
   ['arrow', 'Стрелка', '→'],
-  ['line', 'Линия', '─'],
   ['rect', 'Прямоугольник', '□'],
-  ['ellipse', 'Эллипс', '○'],
   ['text', 'Текст', 'А'],
+  ['number', 'Номер', '№'],
   ['blur', 'Размытие', '▒'],
-  ['eraser', 'Ластик', 'Лс'],
   ['crop', 'Область', '▢']
 ]
 
@@ -19,8 +16,8 @@ export const ACTIONS = [
 
 export const COLORS = ['#ff2d78', '#d0d0d0', '#111111', '#f0c040', '#3d8bff', '#3cb371', '#ff7a1a', '#9b59b6']
 export const WIDTHS = [2, 4, 8, 14]
-export const TOOL_COLOR = new Set(['pencil', 'marker', 'arrow', 'line', 'rect', 'ellipse', 'text'])
-export const TOOL_WIDTH = new Set(['pencil', 'marker', 'arrow', 'line', 'rect', 'ellipse', 'eraser'])
+export const TOOL_COLOR = new Set(['pencil', 'arrow', 'rect', 'text', 'number'])
+export const TOOL_WIDTH = new Set(['pencil', 'arrow', 'rect', 'number'])
 
 export function normRect(a, b) {
   const x = Math.min(a.x, b.x)
@@ -58,8 +55,8 @@ function strokeStyle(ctx, item) {
   ctx.strokeStyle = item.color
   ctx.fillStyle = item.color
   ctx.lineWidth = item.width
-  ctx.globalAlpha = item.tool === 'marker' ? 0.35 : 1
-  ctx.globalCompositeOperation = item.tool === 'eraser' ? 'destination-out' : 'source-over'
+  ctx.globalAlpha = 1
+  ctx.globalCompositeOperation = 'source-over'
 }
 
 function drawPath(ctx, pts) {
@@ -168,24 +165,36 @@ function drawText(ctx, item) {
   ctx.fillText(item.text || '', item.a.x, item.a.y)
 }
 
+function drawNumber(ctx, item) {
+  const t = String(item.n)
+  const r = Math.max(9, 6 + item.width * 1.5 + (t.length - 1) * 4)
+  ctx.beginPath()
+  ctx.arc(item.a.x, item.a.y, r, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.fillStyle = lum(item.color) > 160 ? '#1a1a1a' : '#f2f2f2'
+  ctx.font = `600 ${Math.max(10, r * 1.15 | 0)}px ${FONT}`
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText(t, item.a.x, item.a.y + 0.5)
+  ctx.textAlign = 'start'
+  ctx.textBaseline = 'alphabetic'
+}
+
 export function drawItem(ctx, item) {
   strokeStyle(ctx, item)
-  if (item.tool === 'pencil' || item.tool === 'marker' || item.tool === 'eraser') {
+  if (item.tool === 'pencil') {
     drawPath(ctx, item.pts)
-  } else if (item.tool === 'line' || item.tool === 'arrow') {
+  } else if (item.tool === 'arrow') {
     ctx.beginPath()
     ctx.moveTo(item.a.x, item.a.y)
     ctx.lineTo(item.b.x, item.b.y)
     ctx.stroke()
-    if (item.tool === 'arrow') arrowHead(ctx, item.a, item.b, item.width)
+    arrowHead(ctx, item.a, item.b, item.width)
   } else if (item.tool === 'rect') {
     const r = normRect(item.a, item.b)
     ctx.strokeRect(r.x, r.y, r.w, r.h)
-  } else if (item.tool === 'ellipse') {
-    const r = normRect(item.a, item.b)
-    ctx.beginPath()
-    ctx.ellipse(r.x + r.w / 2, r.y + r.h / 2, Math.max(0.5, r.w / 2), Math.max(0.5, r.h / 2), 0, 0, Math.PI * 2)
-    ctx.stroke()
+  } else if (item.tool === 'number') {
+    drawNumber(ctx, item)
   } else if (item.tool === 'text') {
     drawText(ctx, item)
     return
@@ -254,6 +263,5 @@ export function replay(view, base, overlay, items, preview) {
 
 export function cursorName(tool) {
   if (tool === 'text') return 'text'
-  if (tool === 'eraser') return 'cell'
   return 'crosshair'
 }

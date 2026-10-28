@@ -4,7 +4,8 @@ import { onMounted, onUnmounted, reactive, ref } from 'vue'
 const s = reactive({
   hotkeys: { region: '', window: '', screen: '' },
   saveDir: '',
-  autostart: false
+  autostart: false,
+  showCursor: true
 })
 const rec = reactive({ key: '' })
 const saved = ref(false)
@@ -51,7 +52,8 @@ async function save() {
   await window.redshot.setSettings({
     hotkeys: { ...s.hotkeys },
     saveDir: s.saveDir,
-    autostart: s.autostart
+    autostart: s.autostart,
+    showCursor: s.showCursor
   })
   saved.value = true
   clearTimeout(savedT)
@@ -101,6 +103,10 @@ async function save() {
     <label class="chk">
       <input v-model="s.autostart" type="checkbox" />
       автозагрузка
+    </label>
+    <label class="chk">
+      <input v-model="s.showCursor" type="checkbox" />
+      курсор на снимке
     </label>
     <button type="button" class="ok" :class="{ done: saved }" @click="save">
       {{ saved ? 'Сохранено' : 'Сохранить' }}

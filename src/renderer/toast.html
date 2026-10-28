@@ -1,0 +1,47 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: transparent;
+        overflow: hidden;
+        font: 11px/1 'Segoe UI', sans-serif;
+      }
+      .b {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 36px;
+        padding: 0 6px 0 12px;
+        background: rgba(30, 33, 64, 0.94);
+        border: 1px solid #3a4074;
+        border-radius: 8px;
+        color: #c8cce0;
+        box-shadow: 0 8px 22px #080a1c7a;
+        white-space: nowrap;
+      }
+      button {
+        height: 22px;
+        padding: 0 8px;
+        border: 0;
+        border-radius: 5px;
+        background: #ff2d78;
+        color: #fff;
+        font: 600 11px/22px 'Segoe UI', sans-serif;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="b">скопировано · файл <button type="button" id="f">папка</button></div>
+    <script>
+      const d = new URLSearchParams(location.search).get('d') || ''
+      document.getElementById('f').onclick = () => {
+        window.redshot.openFolder(d).finally(() => window.close())
+      }
+    </script>
+  </body>
+</html>

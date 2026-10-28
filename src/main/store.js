@@ -9,7 +9,8 @@ const defaults = () => ({
     screen: 'Control+PrintScreen'
   },
   saveDir: join(app.getPath('pictures'), 'RedShot'),
-  autostart: false
+  autostart: false,
+  showCursor: true
 })
 
 function file() {

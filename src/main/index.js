@@ -1,5 +1,5 @@
-import { app, BrowserWindow, Tray, Menu, globalShortcut, ipcMain, clipboard, dialog, nativeImage, screen, net } from 'electron'
-import { join } from 'path'
+import { app, BrowserWindow, Tray, Menu, globalShortcut, ipcMain, clipboard, dialog, nativeImage, screen, net, shell } from 'electron'
+import { dirname, join } from 'path'
 import { mkdirSync, writeFileSync } from 'fs'
 import { error, info, log, logPath, openLog } from './log'
 import { captureDesktop, cursorDisplay, dipOnVirt, foregroundDip, overlayBounds, setCursorDip, toOverlay, virtualDip } from './capture'
@@ -9,6 +9,8 @@ import { trayIcon } from './icon'
 let tray
 let overlay
 let settingsWin
+let toastWin
+let toastT
 let settings = null
 let busy = false
 let uiReady = false
@@ -24,13 +26,11 @@ function shotDir() {
 }
 
 function autoSavePng(buf) {
-  try {
-    const dir = shotDir()
-    mkdirSync(dir, { recursive: true })
-    writeFileSync(join(dir, `redshot-${Date.now()}.png`), Buffer.from(buf))
-  } catch (e) {
-    error('auto-save', e)
-  }
+  const dir = shotDir()
+  mkdirSync(dir, { recursive: true })
+  const p = join(dir, `redshot-${Date.now()}.png`)
+  writeFileSync(p, Buffer.from(buf))
+  return p
 }
 
 function markUiReady() {
@@ -158,7 +158,7 @@ function createSettings() {
   }
   settingsWin = new BrowserWindow({
     width: 420,
-    height: 340,
+    height: 372,
     title: 'RedShot',
     backgroundColor: '#111111',
     autoHideMenuBar: true,
@@ -222,7 +222,7 @@ async function startCapture(mode) {
       selection = dipOnVirt(cursorDisplay().bounds, virtualDip())
       clip = selection
     }
-    const data = captureDesktop(clip)
+    const data = captureDesktop(clip, settings.showCursor !== false)
     if (!data?.shots?.length) {
       error(`capture empty mode=${mode} virt=${JSON.stringify(data?.virt)}`)
       return
@@ -248,6 +248,55 @@ function hideOverlay() {
   if (!overlay) return
   overlay.webContents.send('blank')
   overlay.hide()
+}
+
+function toastDir(p) {
+  return p && String(p).toLowerCase().endsWith('.png') ? dirname(p) : p || shotDir()
+}
+
+function showCopyToast(file) {
+  const dir = toastDir(file)
+  try {
+    toastWin?.destroy()
+  } catch {}
+  clearTimeout(toastT)
+  const wa = screen.getPrimaryDisplay().workArea
+  const w = 228
+  const h = 36
+  toastWin = new BrowserWindow({
+    width: w,
+    height: h,
+    x: Math.round(wa.x + (wa.width - w) / 2),
+    y: Math.round(wa.y + wa.height - h - 16),
+    frame: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    resizable: false,
+    movable: false,
+    transparent: true,
+    hasShadow: false,
+    show: false,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      sandbox: false,
+      contextIsolation: true
+    }
+  })
+  toastWin.setMenu(null)
+  toastWin.setAlwaysOnTop(true, 'screen-saver')
+  const q = `toast.html?d=${encodeURIComponent(dir)}`
+  const base = viteBase()
+  const load = base ? toastWin.loadURL(`${base}/${q}`) : toastWin.loadFile(builtPage('toast.html'), { query: { d: dir } })
+  load.catch((e) => error('toast', e))
+  toastWin.once('ready-to-show', () => toastWin.showInactive())
+  toastWin.on('closed', () => {
+    toastWin = null
+  })
+  toastT = setTimeout(() => {
+    try {
+      toastWin?.close()
+    } catch {}
+  }, 1800)
 }
 
 function waitPainted(data) {
@@ -303,11 +352,28 @@ app.whenReady().then(async () => {
       const img = nativeImage.createFromBuffer(Buffer.from(buf))
       if (img.isEmpty()) error(`copy empty image bytes=${buf?.byteLength || buf?.length}`)
       clipboard.writeImage(img)
-      autoSavePng(buf)
-      hideOverlay()
-      return true
     } catch (e) {
       error('copy', e)
+      return null
+    }
+    let p
+    try {
+      p = autoSavePng(buf)
+    } catch (e) {
+      error('auto-save', e)
+      p = shotDir()
+    }
+    hideOverlay()
+    showCopyToast(p)
+    return p
+  })
+  ipcMain.handle('open-folder', async (_, p) => {
+    try {
+      const dir = p && String(p).toLowerCase().endsWith('.png') ? dirname(p) : p || shotDir()
+      await shell.openPath(dir)
+      return true
+    } catch (e) {
+      error('open-folder', e)
       return false
     }
   })
