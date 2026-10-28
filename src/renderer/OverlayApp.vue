@@ -16,6 +16,7 @@ let shots = []
 const sel = reactive({ x: 0, y: 0, w: 0, h: 0, on: false })
 const drag = reactive({ on: false, x: 0, y: 0 })
 const tool = ref('pencil')
+const drawReady = ref(false)
 const color = ref(COLORS[0])
 const width = ref(4)
 const items = []
@@ -88,6 +89,7 @@ function blank(id) {
   texting.drag = ''
   ring.show = false
   aim.on = false
+  drawReady.value = false
   base = null
   overlayC = null
   const c = view.value
@@ -138,13 +140,13 @@ function applyStart(data) {
     vw.value = data.virt.width
     vh.value = data.virt.height
     shots = data.shots || []
+    drawReady.value = !!data.selection
     if (data.selection) {
       Object.assign(sel, { ...data.selection, on: true })
-      hint.value = 'ПКМ — меню · Ctrl+Z — отмена · Enter — копировать · Esc — выход'
     } else {
       Object.assign(sel, { x: 0, y: 0, w: 0, h: 0, on: false })
-      hint.value = 'Выделите область · стрелки — точно'
     }
+    syncHint()
     nextTick(makeBase)
   } catch (e) {
     logErr('applyStart', e)
@@ -153,6 +155,20 @@ function applyStart(data) {
 
 function geoOn() {
   return GEO.has(tool.value)
+}
+
+function cropOn() {
+  return tool.value === 'crop'
+}
+
+function selecting() {
+  return cropOn() || (!sel.on && !drawReady.value)
+}
+
+function syncHint() {
+  if (sel.on) hint.value = 'ПКМ — меню · Ctrl+Z — отмена · Enter — копировать · Esc — выход'
+  else if (drawReady.value && !cropOn()) hint.value = 'Рисуйте · «Область» в меню — выделить'
+  else hint.value = 'Выделите область · ПКМ — рисовать · стрелки — точно'
 }
 
 function clampAim() {
@@ -221,14 +237,14 @@ const loupePos = computed(() => {
 })
 
 const showGuides = computed(
-  () => aim.on && !ring.show && !texting.on && (!sel.on || geoOn())
+  () => aim.on && !ring.show && !texting.on && (selecting() || geoOn())
 )
 watch(showGuides, (v) => {
   if (v) nextTick(paintLoupe)
 })
 
 const cursorNow = computed(() =>
-  !sel.on || (geoOn() && !texting.on && !ring.show) ? 'none' : cursorName(tool.value)
+  selecting() || (geoOn() && !texting.on && !ring.show) ? 'none' : cursorName(tool.value)
 )
 
 const aimLabel = computed(() => {
@@ -358,6 +374,7 @@ function downHandle(e) {
 
 function startItem(x, y) {
   const t = tool.value
+  if (t === 'crop') return
   if (t === 'text') {
     Object.assign(texting, {
       on: true,
@@ -443,6 +460,8 @@ function applyRing() {
   if (!h) return
   if (h.kind === 'tool') {
     tool.value = TOOLS[h.i][0]
+    if (!cropOn()) drawReady.value = true
+    syncHint()
     ring.flash = tool.value
     setTimeout(() => {
       ring.flash = ''
@@ -475,7 +494,6 @@ function onDown(e) {
     e.currentTarget.setPointerCapture(e.pointerId)
   } catch {}
   if (e.button === 2) {
-    if (!sel.on) return
     cancelItem()
     openRing(e.clientX, e.clientY)
     return
@@ -494,18 +512,18 @@ function onDown(e) {
     if (n >= 0) openText(n)
     return
   }
-  if (!sel.on) {
+  if (selecting()) {
     setAim(aim.on ? aim.x : e.clientX, aim.on ? aim.y : e.clientY)
     drag.on = true
     drag.x = aim.x
     drag.y = aim.y
-    Object.assign(sel, { x: drag.x, y: drag.y, w: 0, h: 0 })
+    Object.assign(sel, { x: drag.x, y: drag.y, w: 0, h: 0, on: false })
     return
   }
   if (geoOn()) setAim(aim.on ? aim.x : e.clientX, aim.on ? aim.y : e.clientY)
   const x = geoOn() ? aim.x : e.clientX
   const y = geoOn() ? aim.y : e.clientY
-  if (!geoOn() && !inSel(x, y)) return
+  if (sel.on && !geoOn() && !inSel(x, y)) return
   const i = hitText(x, y)
   if (i >= 0) {
     openText(i)
@@ -523,9 +541,9 @@ function onMove(e) {
     ringLmb = down
     return
   }
-  if (!sel.on) {
+  if (drag.on) {
     trackAim(e)
-    if (drag.on) boxFrom(drag.x, drag.y, aim.x, aim.y)
+    boxFrom(drag.x, drag.y, aim.x, aim.y)
     paintLoupe()
     return
   }
@@ -538,7 +556,7 @@ function onMove(e) {
     texting.b = { x: e.clientX, y: e.clientY }
     return
   }
-  if (geoOn()) {
+  if (selecting() || geoOn()) {
     trackAim(e)
     if (drawing) moveItem(aim.x, aim.y)
     paintLoupe()
@@ -554,6 +572,8 @@ function onUp(e) {
     if (drag.on) {
       drag.on = false
       if (!(sel.w > 3 && sel.h > 3)) Object.assign(sel, { x: 0, y: 0, w: 0, h: 0, on: false })
+      else sel.on = true
+      syncHint()
     }
     cancelItem()
     return
@@ -574,10 +594,9 @@ function onUp(e) {
   }
   if (drag.on) {
     drag.on = false
-    if (sel.w > 3 && sel.h > 3) {
-      sel.on = true
-      hint.value = 'ПКМ — меню · Ctrl+Z — отмена · Enter — копировать · Esc — выход'
-    } else Object.assign(sel, { x: 0, y: 0, w: 0, h: 0, on: false })
+    if (sel.w > 3 && sel.h > 3) sel.on = true
+    else Object.assign(sel, { x: 0, y: 0, w: 0, h: 0, on: false })
+    syncHint()
     return
   }
   endItem()
@@ -659,7 +678,7 @@ function onKey(e) {
     }
     return
   }
-  if (e.key.startsWith('Arrow') && (!sel.on || geoOn()) && nudgeAim(e)) return
+  if (e.key.startsWith('Arrow') && (selecting() || geoOn()) && nudgeAim(e)) return
   if (e.key === 'Escape') {
     window.redshot.close()
     return
@@ -697,7 +716,10 @@ onUnmounted(() => {
 })
 
 const dimRects = computed(() => {
-  if (!sel.on && !drag.on) return [{ x: 0, y: 0, w: '100%', h: '100%' }]
+  if (!sel.on && !drag.on) {
+    if (drawReady.value && !cropOn()) return []
+    return [{ x: 0, y: 0, w: '100%', h: '100%' }]
+  }
   const { x, y, w, h } = sel
   return [
     { x: 0, y: 0, w: '100%', h: y + 'px' },
@@ -791,7 +813,7 @@ const dimRects = computed(() => {
       :width="width"
       :flash="ring.flash"
     />
-    <div v-if="sel.on" class="hint">
+    <div v-if="sel.on || drawReady" class="hint">
       <button type="button" class="hb" title="Ctrl+Z" @pointerdown.stop @click="undoLast">
         <Undo2 :size="14" :stroke-width="2" />
       </button>

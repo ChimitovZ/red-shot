@@ -7,7 +7,8 @@ export const TOOLS = [
   ['ellipse', 'Эллипс', '○'],
   ['text', 'Текст', 'А'],
   ['blur', 'Размытие', '▒'],
-  ['eraser', 'Ластик', 'Лс']
+  ['eraser', 'Ластик', 'Лс'],
+  ['crop', 'Область', '▢']
 ]
 
 export const COLORS = ['#ff2d78', '#d0d0d0', '#111111', '#f0c040', '#3d8bff', '#3cb371', '#ff7a1a', '#9b59b6']

@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import {
   ArrowUpRight,
   Circle,
+  Crop,
   Eraser,
   Grid3x3,
   Highlighter,
@@ -22,7 +23,8 @@ const ICONS = {
   ellipse: Circle,
   text: Type,
   blur: Grid3x3,
-  eraser: Eraser
+  eraser: Eraser,
+  crop: Crop
 }
 
 const props = defineProps({
