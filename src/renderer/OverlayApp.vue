@@ -1,5 +1,6 @@
 <script setup>
 import { nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { Redo2, Undo2 } from '@lucide/vue'
 import RingMenu from './RingMenu.vue'
 import { COLORS, WIDTHS, cursorName, replay, TOOLS } from './draw'
 import { logErr } from './log'
@@ -23,7 +24,6 @@ const hint = ref('Выделите область')
 
 let base = null
 let overlayC = null
-let rmbT = 0
 let drawing = false
 
 function paint() {
@@ -82,7 +82,7 @@ function applyStart(data) {
     shots.value = data.shots.map((s) => ({ ...s, src: 'data:image/png;base64,' + s.b64 }))
     if (data.selection) {
       Object.assign(sel, { ...data.selection, on: true })
-      hint.value = 'ПКМ — инструмент · Enter — копировать · Esc — отмена'
+      hint.value = 'ПКМ — меню · Ctrl+Z — отмена · Enter — копировать · Esc — выход'
     } else {
       Object.assign(sel, { x: 0, y: 0, w: 0, h: 0, on: false })
       hint.value = 'Выделите область'
@@ -139,8 +139,20 @@ function cancelItem() {
   paint()
 }
 
+function undoLast() {
+  if (!items.length) return
+  redo.push(items.pop())
+  paint()
+}
+
+function redoLast() {
+  if (!redo.length) return
+  items.push(redo.pop())
+  paint()
+}
+
 function openRing(x, y) {
-  const R = ringRef.value?.R || 172
+  const R = ringRef.value?.R || 228
   ring.x = Math.min(vw.value - R - 8, Math.max(R + 8, x))
   ring.y = Math.min(vh.value - R - 8, Math.max(R + 8, y))
   ring.hx = x
@@ -166,7 +178,8 @@ function pickRing() {
 function onDown(e) {
   if (e.button === 2) {
     if (!sel.on) return
-    rmbT = setTimeout(() => openRing(e.clientX, e.clientY), 180)
+    cancelItem()
+    openRing(e.clientX, e.clientY)
     return
   }
   if (e.button !== 0 || ring.show || texting.on) return
@@ -199,9 +212,7 @@ function onMove(e) {
 
 function onUp(e) {
   if (e.button === 2) {
-    clearTimeout(rmbT)
     if (ring.show) pickRing()
-    else cancelItem()
     return
   }
   if (e.button !== 0) return
@@ -209,7 +220,7 @@ function onUp(e) {
     drag.on = false
     if (sel.w > 3 && sel.h > 3) {
       sel.on = true
-      hint.value = 'ПКМ — инструмент · Enter — копировать · Esc — отмена'
+      hint.value = 'ПКМ — меню · Ctrl+Z — отмена · Enter — копировать · Esc — выход'
     } else Object.assign(sel, { x: 0, y: 0, w: 0, h: 0, on: false })
     return
   }
@@ -304,25 +315,22 @@ function onKey(e) {
     window.redshot.close()
     return
   }
-  if ((e.ctrlKey && e.key.toLowerCase() === 'c') || e.key === 'Enter') {
+  const ctrl = e.ctrlKey || e.metaKey
+  if ((ctrl && e.code === 'KeyC') || e.key === 'Enter') {
     e.preventDefault()
     copyOut()
   }
-  if (e.ctrlKey && e.key.toLowerCase() === 's') {
+  if (ctrl && e.code === 'KeyS') {
     e.preventDefault()
     saveOut()
   }
-  if (e.ctrlKey && e.key.toLowerCase() === 'z') {
+  if (ctrl && e.code === 'KeyZ') {
     e.preventDefault()
-    if (!items.length) return
-    redo.push(items.pop())
-    paint()
+    e.shiftKey ? redoLast() : undoLast()
   }
-  if (e.ctrlKey && e.key.toLowerCase() === 'y') {
+  if (ctrl && e.code === 'KeyY') {
     e.preventDefault()
-    if (!redo.length) return
-    items.push(redo.pop())
-    paint()
+    redoLast()
   }
 }
 
@@ -387,7 +395,16 @@ const dimRects = () => {
       :width="width"
       :flash="ring.flash"
     />
-    <div class="hint">{{ hint }}</div>
+    <div v-if="sel.on" class="hint">
+      <button type="button" class="hb" title="Ctrl+Z" @pointerdown.stop @click="undoLast">
+        <Undo2 :size="14" :stroke-width="2" />
+      </button>
+      <button type="button" class="hb" title="Ctrl+Y" @pointerdown.stop @click="redoLast">
+        <Redo2 :size="14" :stroke-width="2" />
+      </button>
+      <span>{{ hint }}</span>
+    </div>
+    <div v-else class="hint">{{ hint }}</div>
   </div>
 </template>
 
@@ -432,10 +449,25 @@ const dimRects = () => {
   bottom: 12px;
   transform: translateX(-50%);
   z-index: 15;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   background: #1a1a1a;
   color: #d0d0d0;
   font-size: 12px;
   padding: 4px 8px;
   pointer-events: none;
+}
+.hb {
+  display: flex;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #d0d0d0;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.hb:hover {
+  color: #c41e3a;
 }
 </style>
