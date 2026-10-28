@@ -95,9 +95,8 @@ function blank(id) {
   overlayC = null
   const c = view.value
   if (c) {
-    const ctx = c.getContext('2d')
-    ctx.fillStyle = '#000'
-    ctx.fillRect(0, 0, c.width, c.height)
+    c.width = 1
+    c.height = 1
   }
   nextTick(() => window.redshot.blanked(id))
 }
@@ -148,9 +147,13 @@ function applyStart(data) {
       Object.assign(sel, { x: 0, y: 0, w: 0, h: 0, on: false })
     }
     syncHint()
-    nextTick(makeBase)
+    nextTick(() => {
+      makeBase()
+      requestAnimationFrame(() => window.redshot.painted())
+    })
   } catch (e) {
     logErr('applyStart', e)
+    window.redshot.painted()
   }
 }
 
@@ -840,6 +843,12 @@ const dimRects = computed(() => {
   </div>
 </template>
 
+<style>
+html,
+body {
+  background: transparent;
+}
+</style>
 <style scoped>
 .root {
   position: fixed;

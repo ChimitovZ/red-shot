@@ -121,7 +121,8 @@ function createOverlay() {
     fullscreenable: false,
     enableLargerThanScreen: true,
     hasShadow: false,
-    backgroundColor: '#000000',
+    transparent: true,
+    backgroundColor: '#00000000',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
@@ -230,12 +231,12 @@ async function startCapture(mode) {
     const packed = toOverlay(data.virt, ov, data.shots, selection)
     info(`captured ${packed.shots.length} shot(s) ${packed.shots.map((s) => `${s.pw}x${s.ph}`).join(',')}`)
     await overlayReady()
-    await waitBlank()
     placeOverlay(packed.virt)
+    overlay.setOpacity(0)
+    overlay.showInactive()
+    await waitPainted({ ...packed, mode })
     overlay.setOpacity(1)
-    overlay.show()
     overlay.focus()
-    overlay.webContents.send('start', { ...packed, mode })
   } catch (e) {
     error(`startCapture ${mode}`, e)
   } finally {
@@ -245,27 +246,22 @@ async function startCapture(mode) {
 
 function hideOverlay() {
   if (!overlay) return
+  overlay.setOpacity(0)
   overlay.webContents.send('blank')
   overlay.hide()
 }
 
-let blankN = 0
-function waitBlank() {
+function waitPainted(data) {
   if (!overlay) return Promise.resolve()
-  const id = ++blankN
   return new Promise((r) => {
-    const fn = (_, n) => {
-      if (n !== id) return
-      ipcMain.removeListener('blanked', fn)
+    const done = () => {
+      ipcMain.removeListener('painted', done)
       clearTimeout(t)
       r()
     }
-    const t = setTimeout(() => {
-      ipcMain.removeListener('blanked', fn)
-      r()
-    }, 80)
-    ipcMain.on('blanked', fn)
-    overlay.webContents.send('blank', id)
+    const t = setTimeout(done, 2000)
+    ipcMain.on('painted', done)
+    overlay.webContents.send('start', data)
   })
 }
 
