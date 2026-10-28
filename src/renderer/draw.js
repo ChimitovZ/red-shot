@@ -66,6 +66,93 @@ function arrowHead(ctx, a, b, w) {
   ctx.stroke()
 }
 
+const FONT = '"Segoe UI", sans-serif'
+let mctx
+
+export function textFont(fs) {
+  return `${Math.max(10, fs | 0)}px ${FONT}`
+}
+
+export function measureTextW(text, fs) {
+  if (!mctx) mctx = document.createElement('canvas').getContext('2d')
+  mctx.font = textFont(fs)
+  return Math.max(mctx.measureText(text || ' ').width, fs * 0.5)
+}
+
+export function textBox(item) {
+  const fs = Math.max(10, item.fontSize | 0)
+  const pad = item.bg || item.outline ? 5 : 0
+  return {
+    x: item.a.x - pad,
+    y: item.a.y - pad,
+    w: measureTextW(item.text, fs) + pad * 2,
+    h: fs * 1.2 + pad * 2,
+    pad,
+    fs
+  }
+}
+
+export function textHandle(box) {
+  return { x: box.x + box.w / 2, y: box.y + box.h + 14 }
+}
+
+export function arrowFromBox(box, p) {
+  const cx = box.x + box.w / 2
+  const cy = box.y + box.h / 2
+  const dx = p.x - cx
+  const dy = p.y - cy
+  if (Math.abs(dx) * box.h > Math.abs(dy) * box.w) return { x: dx > 0 ? box.x + box.w : box.x, y: cy }
+  return { x: cx, y: dy > 0 ? box.y + box.h : box.y }
+}
+
+function lum(hex) {
+  const n = parseInt((hex || '#000').slice(1), 16)
+  if (Number.isNaN(n)) return 0
+  return 0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)
+}
+
+export function textBg(color) {
+  return lum(color) > 160 ? '#1a1a1a' : '#f2f2f2'
+}
+
+function roundBox(ctx, b) {
+  const r = Math.min(6, b.w / 4, b.h / 4)
+  ctx.beginPath()
+  ctx.roundRect(b.x, b.y, b.w, b.h, r)
+}
+
+function drawText(ctx, item) {
+  ctx.globalAlpha = 1
+  ctx.globalCompositeOperation = 'source-over'
+  const box = textBox(item)
+  ctx.font = textFont(box.fs)
+  ctx.textBaseline = 'top'
+  if (item.b) {
+    const a = arrowFromBox(box, item.b)
+    ctx.strokeStyle = item.color
+    ctx.lineWidth = Math.max(2, box.fs / 10)
+    ctx.lineCap = 'round'
+    ctx.beginPath()
+    ctx.moveTo(a.x, a.y)
+    ctx.lineTo(item.b.x, item.b.y)
+    ctx.stroke()
+    arrowHead(ctx, a, item.b, box.fs / 6)
+  }
+  if (item.bg) {
+    ctx.fillStyle = lum(item.color) > 160 ? '#1a1a1a' : '#f2f2f2'
+    roundBox(ctx, box)
+    ctx.fill()
+  }
+  if (item.outline) {
+    ctx.strokeStyle = item.color
+    ctx.lineWidth = Math.max(1.5, box.fs / 12)
+    roundBox(ctx, box)
+    ctx.stroke()
+  }
+  ctx.fillStyle = item.color
+  ctx.fillText(item.text || '', item.a.x, item.a.y)
+}
+
 export function drawItem(ctx, item) {
   strokeStyle(ctx, item)
   if (item.tool === 'pencil' || item.tool === 'marker' || item.tool === 'eraser') {
@@ -85,11 +172,8 @@ export function drawItem(ctx, item) {
     ctx.ellipse(r.x + r.w / 2, r.y + r.h / 2, Math.max(0.5, r.w / 2), Math.max(0.5, r.h / 2), 0, 0, Math.PI * 2)
     ctx.stroke()
   } else if (item.tool === 'text') {
-    ctx.globalAlpha = 1
-    ctx.globalCompositeOperation = 'source-over'
-    ctx.font = `${Math.max(14, item.width * 6)}px "Segoe UI", sans-serif`
-    ctx.textBaseline = 'top'
-    ctx.fillText(item.text || '', item.a.x, item.a.y)
+    drawText(ctx, item)
+    return
   }
   ctx.globalAlpha = 1
   ctx.globalCompositeOperation = 'source-over'

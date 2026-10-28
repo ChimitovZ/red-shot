@@ -1,9 +1,12 @@
 <script setup>
-import { nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
-import { Redo2, Undo2 } from '@lucide/vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { Redo2, Square, Undo2 } from '@lucide/vue'
 import RingMenu from './RingMenu.vue'
-import { COLORS, WIDTHS, cursorName, replay, TOOLS } from './draw'
+import { arrowFromBox, COLORS, cursorName, measureTextW, replay, textBg, textBox, textHandle, TOOLS, WIDTHS } from './draw'
 import { logErr } from './log'
+
+const SNAP = 28
+let lastFont = 18
 
 const shots = ref([])
 const sel = reactive({ x: 0, y: 0, w: 0, h: 0, on: false })
@@ -15,7 +18,8 @@ const items = []
 const redo = []
 const preview = ref(null)
 const ring = reactive({ show: false, x: 0, y: 0, hx: 0, hy: 0, flash: '' })
-const texting = reactive({ on: false, x: 0, y: 0, val: '' })
+const texting = reactive({ on: false, edit: -1, x: 0, y: 0, val: '', fontSize: 18, bg: false, outline: false, b: null, drag: '' })
+const tOff = { x: 0, y: 0 }
 const vw = ref(1)
 const vh = ref(1)
 const view = ref(null)
@@ -30,7 +34,8 @@ function paint() {
   const c = view.value
   if (!c || !base || !overlayC) return
   try {
-    replay(c, base, overlayC, items, preview.value)
+    const list = texting.on && texting.edit >= 0 ? items.filter((_, i) => i !== texting.edit) : items
+    replay(c, base, overlayC, list, preview.value)
   } catch (e) {
     logErr('paint', e)
   }
@@ -75,6 +80,7 @@ function applyStart(data) {
     redo.length = 0
     preview.value = null
     texting.on = false
+    texting.edit = -1
     drawing = false
     ring.show = false
     vw.value = data.virt.width
@@ -97,13 +103,108 @@ function inSel(x, y) {
   return sel.on && x >= sel.x && y >= sel.y && x <= sel.x + sel.w && y <= sel.y + sel.h
 }
 
+const tLive = computed(() => ({
+  a: { x: texting.x, y: texting.y },
+  text: texting.val,
+  fontSize: texting.fontSize,
+  bg: texting.bg,
+  outline: texting.outline,
+  b: texting.b,
+  color: color.value
+}))
+const tBox = computed(() => textBox(tLive.value))
+const tDot = computed(() => texting.b || textHandle(tBox.value))
+const tFrom = computed(() => (texting.b ? arrowFromBox(tBox.value, texting.b) : null))
+const tinW = computed(() => measureTextW(texting.val, texting.fontSize) + 6)
+
+function hitText(x, y) {
+  for (let i = items.length - 1; i >= 0; i--) {
+    if (texting.on && i === texting.edit) continue
+    const it = items[i]
+    if (it.tool !== 'text') continue
+    const b = textBox(it)
+    const p = 8
+    if (x >= b.x - p && y >= b.y - p && x <= b.x + b.w + p && y <= b.y + b.h + p) return i
+    if (it.b && Math.hypot(x - it.b.x, y - it.b.y) < 14) return i
+  }
+  return -1
+}
+
+function openText(i) {
+  const it = items[i]
+  color.value = it.color
+  Object.assign(texting, {
+    on: true,
+    edit: i,
+    x: it.a.x,
+    y: it.a.y,
+    val: it.text || '',
+    fontSize: it.fontSize || lastFont,
+    bg: !!it.bg,
+    outline: !!it.outline,
+    b: it.b ? { x: it.b.x, y: it.b.y } : null,
+    drag: ''
+  })
+  paint()
+  nextTick(() => document.querySelector('.tin')?.select())
+}
+
+function commitText() {
+  const fs = Math.min(96, Math.max(10, texting.fontSize | 0 || 18))
+  const edit = texting.edit
+  const row = {
+    tool: 'text',
+    color: color.value,
+    fontSize: fs,
+    a: { x: texting.x, y: texting.y },
+    text: texting.val,
+    bg: texting.bg,
+    outline: texting.outline,
+    b: texting.b
+  }
+  if (texting.val.trim()) {
+    lastFont = fs
+    if (edit >= 0 && items[edit]) Object.assign(items[edit], row)
+    else {
+      items.push(row)
+      redo.length = 0
+    }
+  } else if (edit >= 0) {
+    items.splice(edit, 1)
+    redo.length = 0
+  }
+  texting.on = false
+  texting.edit = -1
+  texting.drag = ''
+  paint()
+}
+
+function downMove(e) {
+  texting.drag = 'text'
+  tOff.x = e.clientX - texting.x
+  tOff.y = e.clientY - texting.y
+}
+
+function downHandle(e) {
+  texting.drag = 'handle'
+  texting.b = { x: e.clientX, y: e.clientY }
+}
+
 function startItem(x, y) {
   const t = tool.value
   if (t === 'text') {
-    texting.on = true
-    texting.x = x
-    texting.y = y
-    texting.val = ''
+    Object.assign(texting, {
+      on: true,
+      edit: -1,
+      x,
+      y,
+      val: '',
+      fontSize: lastFont,
+      bg: false,
+      outline: false,
+      b: null,
+      drag: ''
+    })
     return
   }
   drawing = true
@@ -182,7 +283,13 @@ function onDown(e) {
     openRing(e.clientX, e.clientY)
     return
   }
-  if (e.button !== 0 || ring.show || texting.on) return
+  if (e.button !== 0 || ring.show) return
+  if (texting.on) {
+    commitText()
+    const n = hitText(e.clientX, e.clientY)
+    if (n >= 0) openText(n)
+    return
+  }
   if (!sel.on) {
     drag.on = true
     drag.x = e.clientX
@@ -191,6 +298,11 @@ function onDown(e) {
     return
   }
   if (!inSel(e.clientX, e.clientY)) return
+  const i = hitText(e.clientX, e.clientY)
+  if (i >= 0) {
+    openText(i)
+    return
+  }
   startItem(e.clientX, e.clientY)
 }
 
@@ -207,6 +319,15 @@ function onMove(e) {
     sel.h = Math.abs(e.clientY - drag.y)
     return
   }
+  if (texting.drag === 'text') {
+    texting.x = e.clientX - tOff.x
+    texting.y = e.clientY - tOff.y
+    return
+  }
+  if (texting.drag === 'handle') {
+    texting.b = { x: e.clientX, y: e.clientY }
+    return
+  }
   if (drawing) moveItem(e.clientX, e.clientY)
 }
 
@@ -216,6 +337,14 @@ function onUp(e) {
     return
   }
   if (e.button !== 0) return
+  if (texting.drag) {
+    if (texting.drag === 'handle' && texting.b) {
+      const d = textHandle(tBox.value)
+      if (Math.hypot(texting.b.x - d.x, texting.b.y - d.y) < SNAP) texting.b = null
+    }
+    texting.drag = ''
+    return
+  }
   if (drag.on) {
     drag.on = false
     if (sel.w > 3 && sel.h > 3) {
@@ -293,20 +422,14 @@ async function saveOut() {
 function onKey(e) {
   if (texting.on) {
     if (e.key === 'Enter') {
-      items.push({
-        tool: 'text',
-        color: color.value,
-        width: width.value,
-        a: { x: texting.x, y: texting.y },
-        text: texting.val
-      })
-      redo.length = 0
-      texting.on = false
-      paint()
+      commitText()
       e.preventDefault()
     }
     if (e.key === 'Escape') {
       texting.on = false
+      texting.edit = -1
+      texting.drag = ''
+      paint()
       e.preventDefault()
     }
     return
@@ -376,13 +499,50 @@ const dimRects = () => {
       class="frame"
       :style="{ left: sel.x + 'px', top: sel.y + 'px', width: sel.w + 'px', height: sel.h + 'px' }"
     />
-    <input
-      v-if="texting.on"
-      class="tin"
-      v-model="texting.val"
-      :style="{ left: texting.x + 'px', top: texting.y + 'px', color, fontSize: Math.max(14, width * 6) + 'px' }"
-      autofocus
-    />
+    <template v-if="texting.on">
+      <svg v-if="tFrom" class="tarr">
+        <line :x1="tFrom.x" :y1="tFrom.y" :x2="tDot.x" :y2="tDot.y" :stroke="color" stroke-width="2" stroke-linecap="round" />
+      </svg>
+      <div
+        class="twrap"
+        :style="{
+          left: tBox.x + 'px',
+          top: tBox.y + 'px',
+          padding: tBox.pad + 'px',
+          background: texting.bg ? textBg(color) : 'transparent',
+          boxShadow: texting.outline ? `0 0 0 1.5px ${color}` : 'none'
+        }"
+        @pointerdown.stop="downMove"
+      >
+        <span class="tgrip" />
+        <input
+          class="tin"
+          v-model="texting.val"
+          :style="{ color, fontSize: texting.fontSize + 'px', width: tinW + 'px' }"
+          autofocus
+          @pointerdown.stop
+        />
+      </div>
+      <button
+        type="button"
+        class="tdot"
+        :style="{ left: tDot.x + 'px', top: tDot.y + 'px' }"
+        @pointerdown.stop="downHandle"
+      />
+      <div
+        class="tbar"
+        :style="{ left: tBox.x + tBox.w + 8 + 'px', top: tBox.y + 'px' }"
+        @pointerdown.stop
+      >
+        <input class="tfs" type="number" min="10" max="96" v-model.number="texting.fontSize" />
+        <button type="button" class="tb" :class="{ on: texting.bg }" title="Подложка" @click="texting.bg = !texting.bg">
+          <span class="tfill" />
+        </button>
+        <button type="button" class="tb" :class="{ on: texting.outline }" title="Обводка" @click="texting.outline = !texting.outline">
+          <Square :size="13" :stroke-width="2" />
+        </button>
+      </div>
+    </template>
     <RingMenu
       ref="ringRef"
       :show="ring.show"
@@ -434,14 +594,94 @@ const dimRects = () => {
   border: 1px solid var(--accent);
   pointer-events: none;
 }
-.tin {
+.tarr {
+  position: absolute;
+  inset: 0;
+  z-index: 11;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+.twrap {
   position: absolute;
   z-index: 12;
+  cursor: move;
+  border-radius: 6px;
+}
+.tgrip {
+  position: absolute;
+  left: -5px;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.tin {
+  display: block;
   background: transparent;
-  border: 1px solid var(--accent);
+  border: 0;
   outline: none;
+  padding: 0;
+  margin: 0;
   font-family: 'Segoe UI', sans-serif;
-  min-width: 80px;
+  caret-color: var(--accent);
+  cursor: text;
+}
+.tdot {
+  position: absolute;
+  z-index: 13;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  padding: 0;
+  border: 2px solid #f2f2f2;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: grab;
+}
+.tbar {
+  position: absolute;
+  z-index: 14;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: #1a1a1a;
+  padding: 3px 4px;
+}
+.tfs {
+  width: 38px;
+  height: 20px;
+  border: 0;
+  background: #111;
+  color: #d0d0d0;
+  font-size: 12px;
+  text-align: center;
+  outline: none;
+  appearance: textfield;
+}
+.tfs::-webkit-inner-spin-button,
+.tfs::-webkit-outer-spin-button {
+  appearance: none;
+}
+.tb {
+  display: flex;
+  padding: 2px;
+  border: 0;
+  background: none;
+  color: #d0d0d0;
+  cursor: pointer;
+}
+.tb.on,
+.tb:hover {
+  color: #c41e3a;
+}
+.tfill {
+  width: 11px;
+  height: 11px;
+  border-radius: 2px;
+  background: currentColor;
 }
 .hint {
   position: fixed;
