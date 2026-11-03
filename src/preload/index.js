@@ -11,8 +11,9 @@ contextBridge.exposeInMainWorld('redshot', {
   },
   onShown: (cb) => {
     ipcRenderer.removeAllListeners('shown')
-    ipcRenderer.on('shown', () => cb())
+    ipcRenderer.on('shown', (_, data) => cb(data || null))
   },
+  hitAt: (x, y) => ipcRenderer.invoke('hit-at', { x, y }),
   copy: (buf) => ipcRenderer.invoke('copy', buf),
   save: (buf) => ipcRenderer.invoke('save', buf),
   openFolder: (p) => ipcRenderer.invoke('open-folder', p),

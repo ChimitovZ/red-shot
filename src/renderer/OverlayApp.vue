@@ -17,7 +17,18 @@ let lastFont = 18
 
 let shots = []
 const sel = reactive({ x: 0, y: 0, w: 0, h: 0, on: false })
-const drag = reactive({ on: false, x: 0, y: 0 })
+const drag = reactive({ on: false, arm: false, x: 0, y: 0 })
+const snap = reactive({ on: false, x: 0, y: 0, w: 0, h: 0, name: '', i: 0 })
+let chain = []
+let snapGen = 0
+let snapTail = Promise.resolve()
+let snapTimer = 0
+let snapBusy = false
+let altHeld = false
+let snapPoint = null
+let snapPicking = false
+let snapCandidate = null
+let snapSettle = 0
 const fr = reactive({ op: '', h: '', ax: 0, ay: 0, x: 0, y: 0, w: 0, h0: 0 })
 const tool = ref('pencil')
 const drawReady = ref(false)
@@ -90,12 +101,15 @@ function blank(id) {
   preview.value = null
   drawing = false
   drag.on = false
+  drag.arm = false
   fr.op = ''
   texting.on = false
   texting.edit = -1
   texting.drag = ''
   ring.show = false
   aim.on = false
+  altHeld = false
+  clearSnap()
   drawReady.value = false
   Object.assign(sel, { x: 0, y: 0, w: 0, h: 0, on: false })
   base = null
@@ -141,10 +155,13 @@ function applyStart(data) {
     texting.edit = -1
     drawing = false
     drag.on = false
+    drag.arm = false
     fr.op = ''
     texting.drag = ''
     ring.show = false
     aim.on = false
+    altHeld = false
+    clearSnap()
     shutter()
     vw.value = data.virt.width
     vh.value = data.virt.height
@@ -182,7 +199,7 @@ function selecting() {
 function syncHint() {
   if (sel.on) hint.value = 'ПКМ — меню · Ctrl+Z — отмена · Enter — копировать · Esc — выход'
   else if (drawReady.value && !cropOn()) hint.value = 'Рисуйте · «Область» в меню — выделить'
-  else hint.value = 'Выделите область · ПКМ — рисовать · стрелки — точно'
+  else hint.value = 'Наведите на объект · колёсико — размер · Alt — без прилипания · тяните свою область'
 }
 
 function clampAim() {
@@ -242,6 +259,150 @@ function boxFrom(ax, ay, bx, by, square) {
     w: Math.max(0, Math.min(w, vw.value - x)),
     h: Math.max(0, Math.min(h, vh.value - y))
   })
+}
+
+function clearSnap() {
+  clearTimeout(snapSettle)
+  snapSettle = 0
+  snapCandidate = null
+  snapGen++
+  snapPoint = null
+  snapPicking = false
+  snapBusy = false
+  clearTimeout(snapTimer)
+  snapTimer = 0
+  snap.on = false
+  snap.name = ''
+  snap.i = 0
+  chain = []
+}
+
+function snapWanted() {
+  return !altHeld && !snapPicking && selecting() && !sel.on && !drag.on && !drag.arm && !ring.show && !texting.on && !fr.op
+}
+
+function applyChain(items) {
+  const prev = chain[0]
+  chain = items || []
+  if (!chain.length) {
+    snap.on = false
+    return
+  }
+  const leaf = chain[0]
+  const same =
+    prev &&
+    Math.abs(prev.x - leaf.x) <= 2 &&
+    Math.abs(prev.y - leaf.y) <= 2 &&
+    Math.abs(prev.w - leaf.w) <= 2 &&
+    Math.abs(prev.h - leaf.h) <= 2
+  if (!same) snap.i = 0
+  if (snap.i >= chain.length) snap.i = chain.length - 1
+  const it = chain[snap.i]
+  Object.assign(snap, { on: true, x: it.x, y: it.y, w: it.w, h: it.h, name: it.name || '' })
+}
+
+function sameBox(a, b) {
+  return !!a && !!b && Math.abs(a.x - b.x) <= 2 && Math.abs(a.y - b.y) <= 2 &&
+    Math.abs(a.w - b.w) <= 2 && Math.abs(a.h - b.h) <= 2
+}
+
+function suggestChain(items, force, point) {
+  const leaf = items[0]
+  if (force || sameBox(chain[0], leaf)) {
+    clearTimeout(snapSettle)
+    snapSettle = 0
+    snapCandidate = null
+    applyChain(items)
+    snapPoint = point
+    return
+  }
+  snapPoint = null
+  if (snapCandidate && (sameBox(snapCandidate.items[0], leaf) || (!leaf && !snapCandidate.items.length))) {
+    snapCandidate = { items, point }
+    return
+  }
+  clearTimeout(snapSettle)
+  snapCandidate = { items, point }
+  snapSettle = setTimeout(() => {
+    snapSettle = 0
+    const candidate = snapCandidate
+    snapCandidate = null
+    if (!candidate || !snapWanted()) return
+    const box = candidate.items[0]
+    if (box && (aim.x < box.x || aim.y < box.y || aim.x >= box.x + box.w || aim.y >= box.y + box.h)) return
+    applyChain(candidate.items)
+    snapPoint = candidate.point
+  }, 100)
+}
+
+function askSnap(force = false) {
+  const x = aim.x
+  const y = aim.y
+  const gen = ++snapGen
+  snapBusy = true
+  const task = snapTail.then(async () => {
+    if (gen !== snapGen || altHeld) return false
+    if (!force && !snapWanted()) return false
+    const res = await window.redshot.hitAt(x, y)
+    if (gen !== snapGen || altHeld) return false
+    if (!force && !snapWanted()) return false
+    const leaf = res?.items?.[0]
+    if (!force && (aim.x !== x || aim.y !== y) &&
+      (!leaf || aim.x < leaf.x || aim.y < leaf.y || aim.x >= leaf.x + leaf.w || aim.y >= leaf.y + leaf.h)) return false
+    suggestChain(res?.items || [], force, { x, y })
+    return true
+  }).catch((e) => {
+    logErr('hitAt', e)
+    return false
+  })
+  snapTail = task.finally(() => {
+    if (gen !== snapGen) return
+    snapBusy = false
+    if (snapWanted() && (aim.x !== x || aim.y !== y)) scheduleSnap()
+  })
+  return task
+}
+
+function scheduleSnap() {
+  if (!snapWanted() || snapTimer || snapBusy) return
+  snapTimer = setTimeout(() => {
+    snapTimer = 0
+    askSnap()
+  }, 40)
+}
+
+function beginDrag(square) {
+  drag.arm = false
+  drag.on = true
+  clearSnap()
+  sel.on = false
+  boxFrom(drag.x, drag.y, aim.x, aim.y, square)
+}
+
+function onWheel(e) {
+  if (altHeld || !e.deltaY || !chain.length || drag.on || drag.arm || ring.show || !selecting()) return
+  e.preventDefault()
+  const next = Math.max(0, Math.min(chain.length - 1, snap.i + (e.deltaY < 0 ? 1 : -1)))
+  if (next === snap.i) return
+  snap.i = next
+  const it = chain[next]
+  Object.assign(snap, { on: true, x: it.x, y: it.y, w: it.w, h: it.h, name: it.name || '' })
+}
+
+async function finishArm() {
+  drag.arm = false
+  snapPicking = true
+  clearTimeout(snapTimer)
+  snapTimer = 0
+  if (!altHeld && (!snapPoint || snapPoint.x !== aim.x || snapPoint.y !== aim.y)) {
+    if (!await askSnap(true)) return
+  }
+  drag.arm = false
+  if (!altHeld && snap.on && snap.w >= 8 && snap.h >= 8) {
+    Object.assign(sel, { x: snap.x, y: snap.y, w: snap.w, h: snap.h, on: true })
+  } else Object.assign(sel, { x: 0, y: 0, w: 0, h: 0, on: false })
+  clearSnap()
+  syncHint()
 }
 
 function clampSel() {
@@ -410,6 +571,7 @@ const cursorNow = computed(() => {
 const aimLabel = computed(() => {
   const p = `${aim.x}, ${aim.y}`
   if (drag.on || fr.op) return `${p} · ${sel.w}×${sel.h}`
+  if (snap.on) return `${p} · ${snap.name ? snap.name + ' · ' : ''}${snap.w}×${snap.h}`
   const pr = preview.value
   if (pr?.a && pr?.b) return `${p} · ${Math.abs(pr.b.x - pr.a.x)}×${Math.abs(pr.b.y - pr.a.y)}`
   return p
@@ -429,7 +591,9 @@ function nudgeAim(e) {
   if (e.key === 'ArrowDown') aim.y += step
   clampAim()
   window.redshot.setCursor(aim.x, aim.y)
+  if (drag.arm && Math.hypot(aim.x - drag.x, aim.y - drag.y) > 4) beginDrag(e.shiftKey)
   if (drag.on) boxFrom(drag.x, drag.y, aim.x, aim.y, e.shiftKey)
+  if (selecting() && !drag.on && !drag.arm) scheduleSnap()
   if (fr.op === 'resize') applyResize(aim.x, aim.y, e.shiftKey)
   if (fr.op === 'pan') applyPan(aim.x, aim.y)
   if (drawing) moveItem(aim.x, aim.y, e.shiftKey)
@@ -617,6 +781,7 @@ function redoLast() {
 }
 
 function openRing(x, y) {
+  clearSnap()
   const R = ringRef.value?.R || 228
   ring.x = Math.min(vw.value - R - 8, Math.max(R + 8, x))
   ring.y = Math.min(vh.value - R - 64, Math.max(R + 8, y))
@@ -632,7 +797,11 @@ function applyRing() {
   if (!h) return
   if (h.kind === 'tool') {
     tool.value = TOOLS[h.i][0]
-    if (!cropOn()) drawReady.value = true
+    if (cropOn()) {
+      clearSnap()
+      sel.on = false
+      drawReady.value = false
+    } else drawReady.value = true
     syncHint()
     ring.flash = tool.value
     setTimeout(() => {
@@ -655,6 +824,10 @@ function pickRing() {
   applyRing()
   ring.show = false
   ringLmb = false
+  if (snapWanted()) {
+    setAim(ring.hx, ring.hy)
+    scheduleSnap()
+  }
 }
 
 function tapRing(e) {
@@ -710,10 +883,12 @@ function onDown(e) {
   }
   if (selecting()) {
     setAim(aim.on ? aim.x : e.clientX, aim.on ? aim.y : e.clientY)
-    drag.on = true
+    snapGen++
+    snapPicking = false
+    snapBusy = false
+    drag.arm = true
     drag.x = aim.x
     drag.y = aim.y
-    Object.assign(sel, { x: drag.x, y: drag.y, w: 0, h: 0, on: false })
     return
   }
   if (geoOn()) setAim(aim.on ? aim.x : e.clientX, aim.on ? aim.y : e.clientY)
@@ -765,7 +940,9 @@ function onMove(e) {
   }
   if (selecting() || geoOn()) {
     trackAim(e)
+    if (drag.arm && Math.hypot(aim.x - drag.x, aim.y - drag.y) > 4) beginDrag(e.shiftKey)
     if (drawing) moveItem(aim.x, aim.y, e.shiftKey)
+    else if (selecting() && !drag.on && !drag.arm) scheduleSnap()
     paintLoupe()
     return
   }
@@ -777,6 +954,7 @@ function onUp(e) {
     ringLmb = false
     texting.drag = ''
     fr.op = ''
+    drag.arm = false
     if (drag.on) {
       drag.on = false
       if (!(sel.w > 3 && sel.h > 3)) Object.assign(sel, { x: 0, y: 0, w: 0, h: 0, on: false })
@@ -804,10 +982,15 @@ function onUp(e) {
     texting.drag = ''
     return
   }
+  if (drag.arm) {
+    finishArm()
+    return
+  }
   if (drag.on) {
     drag.on = false
     if (sel.w > 3 && sel.h > 3) sel.on = true
     else Object.assign(sel, { x: 0, y: 0, w: 0, h: 0, on: false })
+    clearSnap()
     syncHint()
     return
   }
@@ -876,11 +1059,27 @@ async function saveOut() {
   }
 }
 
+function onBlur() {
+  altHeld = false
+  spaceHeld.value = false
+  drag.arm = false
+  clearSnap()
+}
+
 function onKeyUp(e) {
+  if (e.key === 'Alt') {
+    altHeld = false
+    scheduleSnap()
+  }
   if (e.code === 'Space') spaceHeld.value = false
 }
 
 function onKey(e) {
+  if (e.key === 'Alt') {
+    altHeld = true
+    clearSnap()
+    e.preventDefault()
+  }
   if (e.code === 'Space' && !texting.on) {
     spaceHeld.value = true
     e.preventDefault()
@@ -926,25 +1125,44 @@ function onKey(e) {
 onMounted(() => {
   window.redshot.onStart(applyStart)
   window.redshot.onBlank(blank)
-  window.redshot.onShown(() => ringRef.value?.warm())
+  window.redshot.onShown((pos) => {
+    ringRef.value?.warm()
+    if (!pos || !selecting()) return
+    setAim(pos.x, pos.y)
+    scheduleSnap()
+  })
   window.redshot.uiReady()
   window.addEventListener('keydown', onKey)
   window.addEventListener('keyup', onKeyUp)
+  window.addEventListener('blur', onBlur)
   window.addEventListener('mousedown', onMouseDown, true)
   window.addEventListener('contextmenu', (e) => e.preventDefault())
 })
 onUnmounted(() => {
+  clearSnap()
   window.removeEventListener('keydown', onKey)
   window.removeEventListener('keyup', onKeyUp)
+  window.removeEventListener('blur', onBlur)
   window.removeEventListener('mousedown', onMouseDown, true)
 })
 
+const live = computed(() => {
+  if (drag.on) return sel
+  if (snap.on) return snap
+  if (sel.on) return sel
+  return null
+})
+
+const suggesting = computed(() => selecting() && !sel.on && !drag.on)
+
 const dimRects = computed(() => {
-  if (!sel.on && !drag.on) {
+  if (suggesting.value) return [{ x: 0, y: 0, w: '100%', h: '100%' }]
+  const b = live.value
+  if (!b) {
     if (drawReady.value && !cropOn()) return []
     return [{ x: 0, y: 0, w: '100%', h: '100%' }]
   }
-  const { x, y, w, h } = sel
+  const { x, y, w, h } = b
   return [
     { x: 0, y: 0, w: '100%', h: y + 'px' },
     { x: 0, y: y + h, w: '100%', h: `calc(100% - ${y + h}px)` },
@@ -957,22 +1175,25 @@ const dimRects = computed(() => {
 <template>
   <div
     class="root"
+    :class="{ suggesting }"
     :style="{ cursor: cursorNow }"
     @pointerdown="onDown"
     @pointermove="onMove"
     @pointerup="onUp"
     @pointercancel="onUp"
+    @wheel="onWheel"
   >
     <canvas ref="view" class="view" />
     <div v-for="(d, i) in dimRects" :key="i" class="dim" :style="{ left: d.x + 'px', top: d.y + 'px', width: d.w, height: d.h }" />
     <div
-      v-if="sel.on || drag.on"
+      v-if="live"
       class="frame"
-      :style="{ left: sel.x + 'px', top: sel.y + 'px', width: sel.w + 'px', height: sel.h + 'px' }"
+      :class="{ proposal: snap.on && !drag.on }"
+      :style="{ left: live.x + 'px', top: live.y + 'px', width: live.w + 'px', height: live.h + 'px' }"
     >
       <i
         v-for="h in HANDLES"
-        v-show="sel.on"
+        v-show="sel.on && !snap.on"
         :key="h"
         class="hnd"
         :class="h"
@@ -1081,11 +1302,18 @@ body {
   background: var(--dim);
   pointer-events: none;
 }
+.suggesting .dim {
+  background: rgba(12, 14, 32, 0.18);
+}
 .frame {
   position: absolute;
   border: 1px solid var(--accent);
   box-shadow: 0 0 0 1px rgba(12, 14, 32, 0.45);
   pointer-events: none;
+}
+.frame.proposal {
+  border-color: rgba(255, 90, 154, 0.5);
+  box-shadow: none;
 }
 .hnd {
   position: absolute;

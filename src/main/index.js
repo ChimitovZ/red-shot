@@ -4,6 +4,7 @@ import { mkdirSync, writeFileSync } from 'fs'
 import { autoUpdater } from 'electron-updater'
 import { error, info, log, logPath, openLog } from './log'
 import { captureDesktop, cursorDisplay, dipOnVirt, foregroundDip, overlayBounds, setCursorDip, toOverlay, virtualDip } from './capture'
+import { hitAt } from './hit'
 import { loadSettings, saveSettings } from './store'
 import { trayIcon } from './icon'
 
@@ -287,7 +288,9 @@ async function startCapture(mode) {
     placeOverlay(packed.virt)
     await waitPainted({ ...packed, mode })
     overlay.showInactive()
-    overlay.webContents.send('shown')
+    const cur = screen.getCursorScreenPoint()
+    const ob = overlay.getBounds()
+    overlay.webContents.send('shown', { x: cur.x - ob.x, y: cur.y - ob.y })
     overlay.focus()
   } catch (e) {
     error(`startCapture ${mode}`, e)
@@ -452,6 +455,10 @@ app.whenReady().then(async () => {
     if (!overlay || !p) return
     const b = overlay.getBounds()
     setCursorDip(b.x + p.x, b.y + p.y)
+  })
+  ipcMain.handle('hit-at', (_, p) => {
+    if (!overlay || overlay.isDestroyed()) return { items: [] }
+    return hitAt(overlay, [settingsWin, toastWin], Math.round(p?.x || 0), Math.round(p?.y || 0))
   })
   ipcMain.handle('get-settings', () => settings)
   ipcMain.handle('set-settings', (_, s) => {

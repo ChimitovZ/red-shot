@@ -4,7 +4,12 @@ import vue from '@vitejs/plugin-vue'
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()]
+    plugins: [externalizeDepsPlugin()],
+    build: {
+      rollupOptions: {
+        input: { index: resolve('src/main/index.js'), 'hit-worker': resolve('src/main/hit-worker.js') }
+      }
+    }
   },
   preload: {
     plugins: [externalizeDepsPlugin()]
