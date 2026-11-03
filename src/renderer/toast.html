@@ -38,9 +38,14 @@
   <body>
     <div class="b">скопировано · файл <button type="button" id="f">папка</button></div>
     <script>
-      const d = new URLSearchParams(location.search).get('d') || ''
-      document.getElementById('f').onclick = () => {
-        window.redshot.openFolder(d).finally(() => window.close())
+      const q = new URLSearchParams(location.search)
+      const t = q.get('t')
+      if (t) document.querySelector('.b').textContent = t
+      else {
+        const d = q.get('d') || ''
+        document.getElementById('f').onclick = () => {
+          window.redshot.openFolder(d).finally(() => window.close())
+        }
       }
     </script>
   </body>

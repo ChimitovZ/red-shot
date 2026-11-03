@@ -1,6 +1,6 @@
 {
   "name": "redshot",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Утилита скриншотов для Windows 10",
   "main": "./out/main/index.js",
   "author": "RedShot",
@@ -9,10 +9,12 @@
     "dev": "electron-vite dev",
     "preview": "electron-vite preview",
     "build:vite": "electron-vite build",
-    "pack": "electron-vite build && electron-builder --win --x64"
+    "pack": "electron-vite build && electron-builder --win --x64",
+    "release": "electron-vite build && electron-builder --win --x64"
   },
   "dependencies": {
     "@lucide/vue": "^1.62.0",
+    "electron-updater": "^6.8.11",
     "koffi": "^2.11.0",
     "vue": "^3.5.13"
   },
@@ -32,8 +34,24 @@
     "files": [
       "out/**",
       "package.json",
-      "node_modules/koffi/**"
+      "node_modules/koffi/**",
+      "node_modules/electron-updater/**",
+      "node_modules/debug/**",
+      "node_modules/graceful-fs/**",
+      "node_modules/has-flag/**",
+      "node_modules/js-yaml/**",
+      "node_modules/lazy-val/**",
+      "node_modules/lodash.escaperegexp/**",
+      "node_modules/lodash.isequal/**",
+      "node_modules/ms/**",
+      "node_modules/sax/**",
+      "node_modules/supports-color/**"
     ],
+    "publish": {
+      "provider": "github",
+      "owner": "ChimitovZ",
+      "repo": "red-shot"
+    },
     "asarUnpack": [
       "**/node_modules/koffi/**"
     ],

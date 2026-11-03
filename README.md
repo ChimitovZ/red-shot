@@ -48,4 +48,6 @@ npm install
 npm run dev
 ```
 
-Установщик для текущего пользователя (без админа): `npm run pack` → `release/RedShot-1.0.0-setup.exe`. Ставится в `%LOCALAPPDATA%\Programs\RedShot`. Автозагрузка пишется на этот exe.
+Установщик для текущего пользователя (без админа): `npm run pack` → `release/RedShot-1.0.1-setup.exe`. Ставится в `%LOCALAPPDATA%\Programs\RedShot`. Автозагрузка пишется на этот exe.
+
+`npm run release` публикует установщик и `latest.yml` в GitHub Releases. Установленная копия сама проверяет релиз и ставит новую версию, когда не идёт снимок. Сборку 1.0.1 нужно поставить один раз вручную: в 1.0.0 обновлятора ещё нет.

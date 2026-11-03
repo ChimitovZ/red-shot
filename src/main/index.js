@@ -1,6 +1,7 @@
 import { app, BrowserWindow, Tray, Menu, globalShortcut, ipcMain, clipboard, dialog, nativeImage, screen, net, shell } from 'electron'
 import { dirname, join } from 'path'
 import { mkdirSync, writeFileSync } from 'fs'
+import { autoUpdater } from 'electron-updater'
 import { error, info, log, logPath, openLog } from './log'
 import { captureDesktop, cursorDisplay, dipOnVirt, foregroundDip, overlayBounds, setCursorDip, toOverlay, virtualDip } from './capture'
 import { loadSettings, saveSettings } from './store'
@@ -13,6 +14,8 @@ let toastWin
 let toastT
 let settings = null
 let busy = false
+let updateReady = false
+let installing = false
 let uiReady = false
 let uiWait = []
 const loadTries = new WeakMap()
@@ -174,12 +177,60 @@ function createSettings() {
   settingsWin.on('closed', () => {
     settingsWin = null
     bindHotkeys()
+    installUpdate()
   })
 }
 
 function applyAutostart() {
   if (!app.isPackaged) return
   app.setLoginItemSettings({ openAtLogin: !!settings.autostart, path: process.execPath })
+}
+
+function updLog(level) {
+  return (...args) => {
+    const err = args.find((a) => a instanceof Error)
+    const msg = args.map((a) => (a instanceof Error ? a.message : typeof a === 'string' ? a : JSON.stringify(a))).join(' ')
+    log(level, `update: ${msg}`, err)
+  }
+}
+
+function canUpdateNow() {
+  return updateReady && !installing && !busy && !settingsWin && !overlay?.isVisible()
+}
+
+function installUpdate() {
+  if (!canUpdateNow()) return
+  installing = true
+  info('update: install')
+  showToast({ t: 'ставится обновление' }, 1400, 160)
+  setTimeout(() => autoUpdater.quitAndInstall(true, true), 800)
+}
+
+function setupUpdates() {
+  if (!app.isPackaged) return
+  autoUpdater.autoDownload = true
+  autoUpdater.autoInstallOnAppQuit = true
+  autoUpdater.disableWebInstaller = true
+  autoUpdater.logger = { info: updLog('INFO'), warn: updLog('INFO'), error: updLog('ERROR') }
+  autoUpdater.on('error', (e) => {
+    installing = false
+    error('update', e)
+  })
+  autoUpdater.on('update-downloaded', (meta) => {
+    updateReady = true
+    info(`update: downloaded ${meta?.version || ''}`)
+    installUpdate()
+  })
+  const check = () => {
+    if (installing) return
+    if (updateReady) {
+      installUpdate()
+      return
+    }
+    autoUpdater.checkForUpdates().catch(() => {})
+  }
+  setTimeout(check, 5000)
+  setInterval(check, 4 * 60 * 60 * 1000)
 }
 
 function bindHotkeys() {
@@ -202,7 +253,7 @@ function bindHotkeys() {
 }
 
 async function startCapture(mode) {
-  if (busy) {
+  if (busy || installing) {
     info('startCapture skipped: busy')
     return
   }
@@ -242,6 +293,7 @@ async function startCapture(mode) {
     error(`startCapture ${mode}`, e)
   } finally {
     busy = false
+    installUpdate()
   }
 }
 
@@ -249,25 +301,24 @@ function hideOverlay() {
   if (!overlay) return
   overlay.webContents.send('blank')
   overlay.hide()
+  installUpdate()
 }
 
 function toastDir(p) {
   return p && String(p).toLowerCase().endsWith('.png') ? dirname(p) : p || shotDir()
 }
 
-function showCopyToast(file) {
-  const dir = toastDir(file)
+function showToast(query, ms, width) {
   try {
     toastWin?.destroy()
   } catch {}
   clearTimeout(toastT)
   const wa = screen.getPrimaryDisplay().workArea
-  const w = 228
   const h = 36
   toastWin = new BrowserWindow({
-    width: w,
+    width,
     height: h,
-    x: Math.round(wa.x + (wa.width - w) / 2),
+    x: Math.round(wa.x + (wa.width - width) / 2),
     y: Math.round(wa.y + wa.height - h - 16),
     frame: false,
     skipTaskbar: true,
@@ -285,9 +336,9 @@ function showCopyToast(file) {
   })
   toastWin.setMenu(null)
   toastWin.setAlwaysOnTop(true, 'screen-saver')
-  const q = `toast.html?d=${encodeURIComponent(dir)}`
+  const q = new URLSearchParams(query).toString()
   const base = viteBase()
-  const load = base ? toastWin.loadURL(`${base}/${q}`) : toastWin.loadFile(builtPage('toast.html'), { query: { d: dir } })
+  const load = base ? toastWin.loadURL(`${base}/toast.html?${q}`) : toastWin.loadFile(builtPage('toast.html'), { query })
   load.catch((e) => error('toast', e))
   toastWin.once('ready-to-show', () => toastWin.showInactive())
   toastWin.on('closed', () => {
@@ -297,7 +348,11 @@ function showCopyToast(file) {
     try {
       toastWin?.close()
     } catch {}
-  }, 1800)
+  }, ms)
+}
+
+function showCopyToast(file) {
+  showToast({ d: toastDir(file) }, 1800, 228)
 }
 
 function waitPainted(data) {
@@ -425,6 +480,7 @@ app.whenReady().then(async () => {
   screen.on('display-metrics-changed', () => {
     if (overlay && !overlay.isVisible()) placeOverlay()
   })
+  setupUpdates()
 }).catch((e) => error('whenReady', e))
 
 app.on('window-all-closed', () => {})

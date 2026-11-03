@@ -6,7 +6,7 @@
 
 - JS без TypeScript. Vue только `<script setup>`. Нет Pinia, vue-router, HTTP API, тестов.
 - Electron 35, electron-vite 3, Vite 6, `@lucide/vue`, native захват через `koffi` → `user32`/`gdi32`.
-- Сборка: `electron-builder` NSIS x64, установка на пользователя без админа (`appId` `com.redshot.app`). CI/стендов нет.
+- Сборка: `electron-builder` NSIS x64, установка на пользователя без админа (`appId` `com.redshot.app`). `npm run pack` локально, `npm run release` публикует GitHub Release (`latest.yml` + setup). Упакованное приложение само обновляется через `electron-updater`. CI/стендов нет.
 
 ## Запуск
 
