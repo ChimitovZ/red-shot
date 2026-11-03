@@ -17,6 +17,7 @@ let settings = null
 let busy = false
 let updateReady = false
 let installing = false
+let updateState = { status: 'idle' }
 let uiReady = false
 let uiWait = []
 const loadTries = new WeakMap()
@@ -162,7 +163,7 @@ function createSettings() {
   }
   settingsWin = new BrowserWindow({
     width: 420,
-    height: 372,
+    height: 442,
     title: 'RedShot',
     backgroundColor: '#111111',
     autoHideMenuBar: true,
@@ -199,6 +200,24 @@ function canUpdateNow() {
   return updateReady && !installing && !busy && !settingsWin && !overlay?.isVisible()
 }
 
+function setUpdateState(status, extra = {}) {
+  updateState = { status, ...extra }
+  settingsWin?.webContents.send('update-state', updateState)
+}
+
+async function checkUpdates() {
+  if (!app.isPackaged) return { status: 'dev' }
+  if (installing || updateReady || ['checking', 'downloading'].includes(updateState.status)) return updateState
+  setUpdateState('checking')
+  try {
+    await autoUpdater.checkForUpdates()
+  } catch (e) {
+    error('update check', e)
+    setUpdateState('error')
+  }
+  return updateState
+}
+
 function installUpdate() {
   if (!canUpdateNow()) return
   installing = true
@@ -216,9 +235,15 @@ function setupUpdates() {
   autoUpdater.on('error', (e) => {
     installing = false
     error('update', e)
+    setUpdateState(updateReady ? 'ready' : 'error')
   })
+  autoUpdater.on('checking-for-update', () => setUpdateState('checking'))
+  autoUpdater.on('update-not-available', () => setUpdateState('current'))
+  autoUpdater.on('update-available', () => setUpdateState('downloading'))
+  autoUpdater.on('download-progress', (p) => setUpdateState('downloading', { percent: Math.round(p.percent) }))
   autoUpdater.on('update-downloaded', (meta) => {
     updateReady = true
+    setUpdateState('ready')
     info(`update: downloaded ${meta?.version || ''}`)
     installUpdate()
   })
@@ -228,7 +253,7 @@ function setupUpdates() {
       installUpdate()
       return
     }
-    autoUpdater.checkForUpdates().catch(() => {})
+    void checkUpdates()
   }
   setTimeout(check, 5000)
   setInterval(check, 4 * 60 * 60 * 1000)
@@ -461,6 +486,8 @@ app.whenReady().then(async () => {
     return hitAt(overlay, [settingsWin, toastWin], Math.round(p?.x || 0), Math.round(p?.y || 0))
   })
   ipcMain.handle('get-settings', () => settings)
+  ipcMain.handle('get-update-state', () => app.isPackaged ? updateState : { status: 'dev' })
+  ipcMain.handle('check-updates', checkUpdates)
   ipcMain.handle('set-settings', (_, s) => {
     try {
       settings = { ...settings, ...s, hotkeys: { ...settings.hotkeys, ...s.hotkeys } }

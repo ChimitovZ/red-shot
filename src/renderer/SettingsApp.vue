@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 
 const s = reactive({
   hotkeys: { region: '', window: '', screen: '' },
@@ -10,14 +10,41 @@ const s = reactive({
 const rec = reactive({ key: '' })
 const saved = ref(false)
 let savedT
+const update = ref({ status: 'idle' })
+const checking = ref(false)
+let offUpdate
+const updateBusy = computed(() => checking.value || ['checking', 'downloading', 'ready'].includes(update.value.status))
+const updateText = computed(() => ({
+  idle: '',
+  checking: 'Проверяем обновления…',
+  downloading: update.value.percent == null ? 'Загружаем обновление…' : `Загружаем обновление: ${update.value.percent}%`,
+  current: 'Установлена последняя версия',
+  ready: 'Обновление готово. Закройте настройки для установки.',
+  error: 'Не удалось проверить обновления. Повторите попытку.',
+  dev: 'Обновления доступны в установленной версии'
+}[update.value.status] || ''))
+
+async function checkUpdates() {
+  checking.value = true
+  try {
+    update.value = await window.redshot.checkUpdates()
+  } catch {
+    update.value = { status: 'error' }
+  } finally {
+    checking.value = false
+  }
+}
 
 onMounted(async () => {
+  offUpdate = window.redshot.onUpdateState((state) => { update.value = state })
+  update.value = await window.redshot.getUpdateState()
   Object.assign(s, await window.redshot.getSettings())
   window.addEventListener('keydown', onKey)
 })
 onUnmounted(() => {
   window.removeEventListener('keydown', onKey)
   clearTimeout(savedT)
+  offUpdate?.()
 })
 
 function recHotkey(which) {
@@ -111,6 +138,12 @@ async function save() {
     <button type="button" class="ok" :class="{ done: saved }" @click="save">
       {{ saved ? 'Сохранено' : 'Сохранить' }}
     </button>
+    <div class="updates">
+      <button type="button" class="check-update" :disabled="updateBusy" @click="checkUpdates">
+        {{ update.status === 'checking' || checking ? 'Проверяем…' : 'Проверить обновления' }}
+      </button>
+      <p role="status" aria-live="polite">{{ updateText }}</p>
+    </div>
   </div>
 </template>
 
@@ -144,6 +177,7 @@ label {
 }
 .hk,
 .browse,
+.check-update,
 .ok {
   background: var(--panel);
   color: var(--fg);
@@ -160,6 +194,7 @@ label {
   letter-spacing: 0.02em;
 }
 .hk:hover,
+.check-update:hover:not(:disabled),
 .browse:hover {
   background: var(--panel-2);
   border-color: #4a5088;
@@ -167,6 +202,7 @@ label {
 .hk:focus-visible,
 .browse:focus-visible,
 .ok:focus-visible,
+.check-update:focus-visible,
 .chk input:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
@@ -247,5 +283,20 @@ label {
   border-color: var(--line);
   color: var(--fg);
   filter: none;
+}
+.updates {
+  margin-top: 12px;
+}
+.check-update {
+  width: 100%;
+}
+.check-update:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+.updates p {
+  margin: 6px 0 0;
+  min-height: 2.6em;
+  color: var(--muted);
 }
 </style>

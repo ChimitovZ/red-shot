@@ -1,6 +1,6 @@
 {
   "name": "redshot",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Утилита скриншотов для Windows 10",
   "main": "./out/main/index.js",
   "author": "RedShot",

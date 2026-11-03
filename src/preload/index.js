@@ -22,6 +22,13 @@ contextBridge.exposeInMainWorld('redshot', {
   blanked: (id) => ipcRenderer.send('blanked', id),
   painted: () => ipcRenderer.send('painted'),
   getSettings: () => ipcRenderer.invoke('get-settings'),
+  getUpdateState: () => ipcRenderer.invoke('get-update-state'),
+  checkUpdates: () => ipcRenderer.invoke('check-updates'),
+  onUpdateState: (cb) => {
+    const listener = (_, state) => cb(state)
+    ipcRenderer.on('update-state', listener)
+    return () => ipcRenderer.removeListener('update-state', listener)
+  },
   setSettings: (s) => ipcRenderer.invoke('set-settings', s),
   pickDir: () => ipcRenderer.invoke('pick-dir'),
   log: (level, msg) => ipcRenderer.send('log', { level, msg }),
