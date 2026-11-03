@@ -41,13 +41,22 @@
       "signAndEditExecutable": false,
       "target": [
         {
-          "target": "portable",
+          "target": "nsis",
           "arch": [
             "x64"
           ]
         }
       ],
-      "artifactName": "RedShot-${version}-portable.exe"
+      "artifactName": "RedShot-${version}-setup.exe"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowElevation": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "RedShot",
+      "deleteAppDataOnUninstall": false
     }
   }
 }

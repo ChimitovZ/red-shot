@@ -178,6 +178,7 @@ function createSettings() {
 }
 
 function applyAutostart() {
+  if (!app.isPackaged) return
   app.setLoginItemSettings({ openAtLogin: !!settings.autostart, path: process.execPath })
 }
 

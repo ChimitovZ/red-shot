@@ -48,4 +48,4 @@ npm install
 npm run dev
 ```
 
-Портативный exe (без установки, без админа): `npm run pack` → `release/RedShot-1.0.0-portable.exe`.
+Установщик для текущего пользователя (без админа): `npm run pack` → `release/RedShot-1.0.0-setup.exe`. Ставится в `%LOCALAPPDATA%\Programs\RedShot`. Автозагрузка пишется на этот exe.
